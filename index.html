@@ -1,1 +1,126 @@
- 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Core Extractor - Cyber Idle Defense</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game-wrapper">
+    <!-- Top HUD Bar -->
+    <header id="top-hud">
+      <div class="hud-box">
+        <span class="hud-label">ENERGY:</span>
+        <span id="dark-energy" class="hud-val neon-cyan">0</span>
+        <span class="hud-sub">(+<span id="energy-rate">5</span>/s)</span>
+      </div>
+      <div class="hud-box">
+        <span class="hud-label">WAVE:</span>
+        <span id="wave-counter" class="hud-val neon-magenta">1</span>
+        <span class="hud-sub" id="wave-progress">Wave in progress</span>
+      </div>
+      <div class="hud-box">
+        <span class="hud-label">CORE INTEGRITY:</span>
+        <span id="core-hp-text" class="hud-val neon-green">100 / 100</span>
+      </div>
+    </header>
+
+    <div id="main-stage">
+      <!-- Main Arena Canvas -->
+      <div id="canvas-container">
+        <canvas id="gameCanvas"></canvas>
+
+        <!-- Floating Damage Canvas Overlay -->
+        <div id="click-hint">Tip: Click anywhere to call an orbital strike</div>
+      </div>
+
+      <!-- In-Run Upgrade Sidebar -->
+      <aside id="upgrade-sidebar">
+        <div class="sidebar-header">
+          <h2>IN-RUN UPGRADES</h2>
+          <p class="sidebar-sub">Enhance current run defenses</p>
+        </div>
+
+        <div class="upgrade-list">
+          <!-- Upgrade: Turret Damage -->
+          <div class="upgrade-card" id="card-damage">
+            <div class="upgrade-info">
+              <span class="upgrade-name">Turret Damage</span>
+              <span class="upgrade-level">Lv <span id="lvl-damage">1</span></span>
+            </div>
+            <div class="upgrade-effect">Damage: <span id="val-damage">15</span></div>
+            <button class="upgrade-btn" id="btn-upgrade-damage">
+              UPGRADE (<span id="cost-damage">25</span>)
+            </button>
+          </div>
+
+          <!-- Upgrade: Attack Speed / Fire Rate -->
+          <div class="upgrade-card" id="card-firerate">
+            <div class="upgrade-info">
+              <span class="upgrade-name">Firing Rate</span>
+              <span class="upgrade-level">Lv <span id="lvl-firerate">1</span></span>
+            </div>
+            <div class="upgrade-effect">Cooldown: <span id="val-firerate">0.45</span>s</div>
+            <button class="upgrade-btn" id="btn-upgrade-firerate">
+              UPGRADE (<span id="cost-firerate">35</span>)
+            </button>
+          </div>
+
+          <!-- Upgrade: Core Health -->
+          <div class="upgrade-card" id="card-health">
+            <div class="upgrade-info">
+              <span class="upgrade-name">Reinforced Core</span>
+              <span class="upgrade-level">Lv <span id="lvl-health">1</span></span>
+            </div>
+            <div class="upgrade-effect">Max HP: <span id="val-health">100</span></div>
+            <button class="upgrade-btn" id="btn-upgrade-health">
+              UPGRADE (<span id="cost-health">40</span>)
+            </button>
+          </div>
+
+          <!-- Upgrade: Extractor Yield -->
+          <div class="upgrade-card" id="card-yield">
+            <div class="upgrade-info">
+              <span class="upgrade-name">Extractor Yield</span>
+              <span class="upgrade-level">Lv <span id="lvl-yield">1</span></span>
+            </div>
+            <div class="upgrade-effect">Yield: +<span id="val-yield">5</span>/s</div>
+            <button class="upgrade-btn" id="btn-upgrade-yield">
+              UPGRADE (<span id="cost-yield">30</span>)
+            </button>
+          </div>
+        </div>
+
+        <div class="sidebar-footer">
+          <div class="stat-row">
+            <span>Range:</span>
+            <span id="stat-range">240px</span>
+          </div>
+          <div class="stat-row">
+            <span>Enemies Defeated:</span>
+            <span id="stat-kills">0</span>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div id="game-over-modal" class="overlay hidden">
+      <div class="modal-box">
+        <h1 class="neon-red">CORE BREACH DETECTED</h1>
+        <p>The dark energy drill was overwhelmed by the swarm.</p>
+        <div class="stats-summary">
+          <div>Waves Survived: <strong id="summary-waves">0</strong></div>
+          <div>Total Biomass Extracted: <strong id="summary-energy">0</strong></div>
+          <div>Threats Eliminated: <strong id="summary-kills">0</strong></div>
+        </div>
+        <button id="restart-run-btn" class="action-btn">REDEPLOY DRILL</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Entry Script -->
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
