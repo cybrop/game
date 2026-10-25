@@ -1,28 +1,37 @@
 import { Isometric } from '../core/Isometric.js';
 
 /**
- * 2.5D / 3D Particle & Visual FX System
- * Supports 3D trajectories (x, y, z), gravity, floor collision bouncing,
- * ground scorch splatters, and isometric elliptical shockwaves.
+ * High-performance 2.5D / 3D Particle & Visual FX System
+ * Includes hard caps to protect framerate under intense swarms.
  */
 export class ParticleSystem {
   constructor() {
     this.particles = [];
     this.splatters = [];
     this.shockwaves = [];
+
+    // Performance budget clamps for 60 FPS stability
+    this.MAX_PARTICLES = 320;
+    this.MAX_SPLATTERS = 50;
+    this.MAX_SHOCKWAVES = 12;
   }
 
   reset() {
-    this.particles = [];
-    this.splatters = [];
-    this.shockwaves = [];
+    this.particles.length = 0;
+    this.splatters.length = 0;
+    this.shockwaves.length = 0;
   }
 
   /**
    * Spawn 3D particles with velocity, elevation, and floor bounce
    */
   emitExplosion(worldX, worldY, worldZ = 10, color = '#ff0055', count = 16, isHeavy = false) {
-    const total = isHeavy ? count * 2 : count;
+    // If over particle budget, cull spawn amount
+    const allowance = this.MAX_PARTICLES - this.particles.length;
+    if (allowance <= 0) return;
+
+    const requested = isHeavy ? count * 2 : count;
+    const total = Math.min(allowance, requested);
     const baseSpeed = isHeavy ? 140 : 90;
     const gravity = isHeavy ? 280 : 180;
 
@@ -44,17 +53,21 @@ export class ParticleSystem {
         radius: (Math.random() * 2.5 + 1.2) * (isHeavy ? 1.4 : 1),
         color,
         alpha: 1,
-        decay: Math.random() * 0.4 + 0.6, // seconds duration
+        decay: Math.random() * 0.35 + 0.5,
         age: 0
       });
     }
   }
 
   /**
-   * Spawn targeted kinetic sparks (e.g. on bullet impact or strike)
+   * Spawn targeted kinetic sparks
    */
   emitSparks(worldX, worldY, worldZ = 12, color = '#00f3ff', count = 8, biasAngle = null) {
-    for (let i = 0; i < count; i++) {
+    const allowance = this.MAX_PARTICLES - this.particles.length;
+    if (allowance <= 0) return;
+
+    const total = Math.min(allowance, count);
+    for (let i = 0; i < total; i++) {
       const angle = biasAngle !== null
         ? biasAngle + (Math.random() - 0.5) * 1.2
         : Math.random() * Math.PI * 2;
@@ -73,7 +86,7 @@ export class ParticleSystem {
         radius: Math.random() * 1.8 + 0.8,
         color,
         alpha: 1,
-        decay: Math.random() * 0.25 + 0.35,
+        decay: Math.random() * 0.2 + 0.3,
         age: 0
       });
     }
@@ -83,6 +96,10 @@ export class ParticleSystem {
    * Spawn 2.5D Isometric Shockwave on the ground plane
    */
   emitShockwave(worldX, worldY, maxRadius = 75, color = '#00f3ff') {
+    if (this.shockwaves.length >= this.MAX_SHOCKWAVES) {
+      this.shockwaves.shift(); // Evict oldest
+    }
+
     this.shockwaves.push({
       x: worldX,
       y: worldY,
@@ -101,7 +118,6 @@ export class ParticleSystem {
       p.age += dt;
       p.alpha = Math.max(0, 1 - (p.age / p.decay));
 
-      // Move in world Cartesian coordinates
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.z += p.vz * dt;
@@ -116,15 +132,14 @@ export class ParticleSystem {
           p.vx *= 0.65;
           p.vy *= 0.65;
 
-          // Leave temporary floor splatter spot
-          if (p.age < p.decay * 0.7) {
+          if (this.splatters.length < this.MAX_SPLATTERS && p.age < p.decay * 0.6) {
             this.splatters.push({
               x: p.x,
               y: p.y,
-              radius: p.radius * (Math.random() * 1.5 + 1.2),
+              radius: p.radius * (Math.random() * 1.4 + 1.1),
               color: p.color,
-              alpha: p.alpha * 0.65,
-              decay: 0.8,
+              alpha: p.alpha * 0.6,
+              decay: 0.7,
               age: 0
             });
           }
@@ -144,7 +159,7 @@ export class ParticleSystem {
     for (let i = this.splatters.length - 1; i >= 0; i--) {
       const s = this.splatters[i];
       s.age += dt;
-      s.alpha = Math.max(0, 0.65 * (1 - (s.age / s.decay)));
+      s.alpha = Math.max(0, 0.6 * (1 - (s.age / s.decay)));
       if (s.alpha <= 0) {
         this.splatters.splice(i, 1);
       }
@@ -162,9 +177,6 @@ export class ParticleSystem {
     }
   }
 
-  /**
-   * Render ground-layer visual effects (shockwaves & floor splatters on z=0)
-   */
   drawGroundFX(ctx, originX, originY) {
     ctx.save();
 
@@ -182,7 +194,7 @@ export class ParticleSystem {
       ctx.fill();
     }
 
-    // 2.5D Concentric Elliptical Shockwaves
+    // Concentric Elliptical Shockwaves
     for (let i = 0; i < this.shockwaves.length; i++) {
       const sw = this.shockwaves[i];
       const pos = Isometric.worldToScreen(sw.x, sw.y, 0, originX, originY);
@@ -195,10 +207,9 @@ export class ParticleSystem {
       ctx.globalAlpha = Math.max(0, sw.alpha);
       ctx.lineWidth = 3;
       ctx.shadowColor = sw.color;
-      ctx.shadowBlur = 12;
+      ctx.shadowBlur = 10;
       ctx.stroke();
 
-      // Outer faint ripple ring
       ctx.beginPath();
       ctx.ellipse(pos.x, pos.y, rx * 1.15, ry * 1.15, 0, 0, Math.PI * 2);
       ctx.strokeStyle = sw.color;
@@ -210,9 +221,6 @@ export class ParticleSystem {
     ctx.restore();
   }
 
-  /**
-   * Render airborne 3D particles with elevation projection and contact shadows
-   */
   drawAirborneParticles(ctx, originX, originY) {
     ctx.save();
 
@@ -237,7 +245,7 @@ export class ParticleSystem {
       ctx.fillStyle = p.color;
       ctx.globalAlpha = Math.max(0, p.alpha);
       ctx.shadowColor = p.color;
-      ctx.shadowBlur = 6;
+      ctx.shadowBlur = 4;
       ctx.fill();
     }
 
