@@ -1,5 +1,7 @@
 /**
- * Procedural Web Audio API sound generator (Zero external files/dependencies)
+ * Minecraft & Voxel Procedural Web Audio API Synthesizer
+ * Synthesizes bow/dispenser arrow twangs, stone impacts, block cracking,
+ * TNT explosions, redstone lightning, and anvil dings with zero external assets.
  */
 export class AudioManager {
   constructor() {
@@ -29,21 +31,49 @@ export class AudioManager {
     return this.isMuted;
   }
 
-  // Laser blaster shot
-  playLaser() {
+  /**
+   * Bow / Dispenser Arrow Release Twang
+   */
+  playArrowTwang() {
     if (this.isMuted) return;
     this.init();
 
+    const now = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
 
-    osc.type = 'sawtooth';
-    const now = this.ctx.currentTime;
-    osc.frequency.setValueAtTime(880, now);
-    osc.frequency.exponentialRampToValueAtTime(110, now + 0.08);
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(220, now);
+    osc.frequency.exponentialRampToValueAtTime(560, now + 0.04);
+    osc.frequency.exponentialRampToValueAtTime(140, now + 0.11);
 
-    gain.gain.setValueAtTime(0.18, now);
-    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+    gain.gain.setValueAtTime(0.3, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+
+    osc.start(now);
+    osc.stop(now + 0.12);
+  }
+
+  /**
+   * Stone / Arrow Impact Thud
+   */
+  playImpact() {
+    if (this.isMuted) return;
+    this.init();
+
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(95, now);
+    osc.frequency.exponentialRampToValueAtTime(32, now + 0.08);
+
+    gain.gain.setValueAtTime(0.4, now);
+    gain.gain.linearRampToValueAtTime(0.01, now + 0.08);
 
     osc.connect(gain);
     gain.connect(this.masterGain);
@@ -52,38 +82,70 @@ export class AudioManager {
     osc.stop(now + 0.08);
   }
 
-  // Projectile impact
-  playImpact() {
+  /**
+   * Crunchy Block Cracking / Mob Damage Sound
+   */
+  playMobDamage(isBrute = false) {
     if (this.isMuted) return;
     this.init();
 
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
     const now = this.ctx.currentTime;
+    const duration = isBrute ? 0.22 : 0.14;
 
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(220, now);
-    osc.frequency.exponentialRampToValueAtTime(40, now + 0.05);
+    const bufferSize = Math.floor(this.ctx.sampleRate * duration);
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.35));
+    }
 
-    gain.gain.setValueAtTime(0.2, now);
-    gain.gain.linearRampToValueAtTime(0.01, now + 0.05);
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
 
-    osc.connect(gain);
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(isBrute ? 420 : 750, now);
+    filter.Q.setValueAtTime(1.8, now);
+
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(isBrute ? 0.45 : 0.3, now);
+    gain.gain.linearRampToValueAtTime(0.01, now + duration);
+
+    noise.connect(filter);
+    filter.connect(gain);
     gain.connect(this.masterGain);
 
-    osc.start(now);
-    osc.stop(now + 0.05);
+    noise.start(now);
+    noise.stop(now + duration);
   }
 
-  // Enemy / Heavy Explosion
-  playExplosion(heavy = false) {
+  /**
+   * TNT Blast / Heavy Mob Detonation Explosion
+   */
+  playTNTExplosion(heavy = false) {
     if (this.isMuted) return;
     this.init();
 
-    const duration = heavy ? 0.35 : 0.2;
     const now = this.ctx.currentTime;
+    const duration = heavy ? 0.45 : 0.3;
 
-    // Noise buffer for blast debris
+    // Sub-bass impact oscillator
+    const subOsc = this.ctx.createOscillator();
+    const subGain = this.ctx.createGain();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(heavy ? 90 : 120, now);
+    subOsc.frequency.exponentialRampToValueAtTime(25, now + duration * 0.7);
+
+    subGain.gain.setValueAtTime(0.6, now);
+    subGain.gain.exponentialRampToValueAtTime(0.01, now + duration * 0.7);
+
+    subOsc.connect(subGain);
+    subGain.connect(this.masterGain);
+
+    subOsc.start(now);
+    subOsc.stop(now + duration * 0.7);
+
+    // Blast debris rumble noise
     const bufferSize = Math.floor(this.ctx.sampleRate * duration);
     const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
     const data = buffer.getChannelData(0);
@@ -96,11 +158,11 @@ export class AudioManager {
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(heavy ? 600 : 900, now);
-    filter.frequency.exponentialRampToValueAtTime(80, now + duration);
+    filter.frequency.setValueAtTime(heavy ? 500 : 700, now);
+    filter.frequency.exponentialRampToValueAtTime(60, now + duration);
 
     const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(heavy ? 0.45 : 0.25, now);
+    gain.gain.setValueAtTime(heavy ? 0.55 : 0.35, now);
     gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
 
     noise.connect(filter);
@@ -111,82 +173,95 @@ export class AudioManager {
     noise.stop(now + duration);
   }
 
-  // Orbital Strike Shockwave
-  playShockwave() {
+  /**
+   * Anvil Ding on Upgrade / Forge Craft
+   */
+  playAnvil() {
     if (this.isMuted) return;
     this.init();
 
     const now = this.ctx.currentTime;
+    const frequencies = [1760, 2640]; // A6 and E7 resonant metallic harmonics
+
+    frequencies.forEach((freq, idx) => {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now);
+
+      const initialGain = idx === 0 ? 0.35 : 0.22;
+      gain.gain.setValueAtTime(initialGain, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+
+      osc.start(now);
+      osc.stop(now + 0.45);
+    });
+  }
+
+  /**
+   * Redstone Lightning Rod Zap & Thunder Snap
+   */
+  playLightningStrike() {
+    if (this.isMuted) return;
+    this.init();
+
+    const now = this.ctx.currentTime;
+
+    // High electrical crack
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(1400, now);
+    osc.frequency.setValueAtTime(450, now + 0.04);
+    osc.frequency.setValueAtTime(1800, now + 0.07);
 
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(140, now);
-    osc.frequency.exponentialRampToValueAtTime(30, now + 0.25);
-
-    gain.gain.setValueAtTime(0.5, now);
-    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+    gain.gain.setValueAtTime(0.3, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
 
     osc.connect(gain);
     gain.connect(this.masterGain);
 
     osc.start(now);
-    osc.stop(now + 0.25);
+    osc.stop(now + 0.15);
   }
 
-  // Tesla Arc Electric Zap
-  playTeslaZap() {
+  /**
+   * Totem of Undying Revive Fanfare
+   */
+  playTotemRevive() {
     if (this.isMuted) return;
     this.init();
 
-    const now = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(1200, now);
-    osc.frequency.setValueAtTime(600, now + 0.03);
-    osc.frequency.setValueAtTime(1600, now + 0.06);
-
-    gain.gain.setValueAtTime(0.12, now);
-    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-
-    osc.connect(gain);
-    gain.connect(this.masterGain);
-
-    osc.start(now);
-    osc.stop(now + 0.1);
-  }
-
-  // Level Up / Tech Upgrade Chime
-  playUpgrade() {
-    if (this.isMuted) return;
-    this.init();
-
-    const notes = [440, 554.37, 659.25]; // A4, C#5, E5 triad
+    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6 triumphant chime
     const now = this.ctx.currentTime;
 
     notes.forEach((freq, idx) => {
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
-      const startTime = now + idx * 0.06;
+      const start = now + idx * 0.08;
 
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, startTime);
+      osc.frequency.setValueAtTime(freq, start);
 
-      gain.gain.setValueAtTime(0.16, startTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, startTime + 0.18);
+      gain.gain.setValueAtTime(0.25, start);
+      gain.gain.exponentialRampToValueAtTime(0.01, start + 0.35);
 
       osc.connect(gain);
       gain.connect(this.masterGain);
 
-      osc.start(startTime);
-      osc.stop(startTime + 0.18);
+      osc.start(start);
+      osc.stop(start + 0.35);
     });
   }
 
-  // Core Breach Alarm Siren
-  playCoreBreach() {
+  /**
+   * Beacon Destroyed Alarm
+   */
+  playBeaconDestroyed() {
     if (this.isMuted) return;
     this.init();
 
@@ -195,18 +270,17 @@ export class AudioManager {
     const gain = this.ctx.createGain();
 
     osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(320, now);
-    osc.frequency.linearRampToValueAtTime(180, now + 0.2);
-    osc.frequency.linearRampToValueAtTime(320, now + 0.4);
-    osc.frequency.linearRampToValueAtTime(120, now + 0.7);
+    osc.frequency.setValueAtTime(260, now);
+    osc.frequency.linearRampToValueAtTime(130, now + 0.3);
+    osc.frequency.linearRampToValueAtTime(65, now + 0.6);
 
-    gain.gain.setValueAtTime(0.4, now);
-    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.75);
+    gain.gain.setValueAtTime(0.5, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.65);
 
     osc.connect(gain);
     gain.connect(this.masterGain);
 
     osc.start(now);
-    osc.stop(now + 0.75);
+    osc.stop(now + 0.65);
   }
 }
