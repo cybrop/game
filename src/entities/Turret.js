@@ -1,15 +1,17 @@
 import { Bullet } from './Bullet.js';
+import { Isometric } from '../core/Isometric.js';
 import { audio } from '../main.js';
 
 export class Turret {
-  constructor(x, y, baseDamage = 15) {
+  constructor(x = 0, y = 0, baseDamage = 15) {
     this.x = x;
     this.y = y;
+    this.elevation = 28; // Elevated atop Core deck
     this.angle = 0;
     this.range = 240;
     this.damage = baseDamage;
-    this.fireCooldown = 450; // ms
-    this.timeSinceLastShot = 0; // ms
+    this.fireCooldown = 450;
+    this.timeSinceLastShot = 0;
     this.target = null;
     this.muzzleFlash = 0;
   }
@@ -20,13 +22,11 @@ export class Turret {
       this.muzzleFlash -= dt * 6;
     }
 
-    // Target nearest enemy within range
     this.target = this.findNearestEnemy(enemies);
 
     if (this.target) {
       this.angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
 
-      // Auto-fire
       if (this.timeSinceLastShot >= this.fireCooldown) {
         this.fire(bullets);
         this.timeSinceLastShot = 0;
@@ -50,53 +50,57 @@ export class Turret {
   }
 
   fire(bullets) {
-    const muzzleOffset = 26;
+    const muzzleOffset = 22;
     const spawnX = this.x + Math.cos(this.angle) * muzzleOffset;
     const spawnY = this.y + Math.sin(this.angle) * muzzleOffset;
     bullets.push(new Bullet(spawnX, spawnY, this.angle, this.damage));
     audio.playLaser();
   }
 
-  draw(ctx) {
-    ctx.save();
-    ctx.translate(this.x, this.y);
-    ctx.rotate(this.angle);
+  draw(ctx, originX = 0, originY = 0) {
+    const screenPos = Isometric.worldToScreen(this.x, this.y, this.elevation, originX, originY);
 
-    // Muzzle flash when firing
+    ctx.save();
+    ctx.translate(screenPos.x, screenPos.y);
+
+    // Muzzle flash
     if (this.muzzleFlash > 0) {
       ctx.beginPath();
-      ctx.arc(26, 0, 10 * this.muzzleFlash, 0, Math.PI * 2);
+      ctx.arc(Math.cos(this.angle) * 18, Math.sin(this.angle) * 9, 8 * this.muzzleFlash, 0, Math.PI * 2);
       ctx.fillStyle = `rgba(0, 243, 255, ${this.muzzleFlash})`;
       ctx.shadowColor = '#00f3ff';
-      ctx.shadowBlur = 15;
+      ctx.shadowBlur = 14;
       ctx.fill();
     }
 
-    // Turret barrel
+    // 2.5D Aiming Turret Cannon
+    ctx.save();
+    ctx.scale(1, 0.58); // Isometric pitch tilt
+    ctx.rotate(this.angle);
+
     ctx.fillStyle = '#00f3ff';
     ctx.shadowColor = '#00f3ff';
-    ctx.shadowBlur = 10;
-    ctx.fillRect(8, -3, 18, 6);
+    ctx.shadowBlur = 8;
+    ctx.fillRect(4, -3, 16, 6);
 
-    // Turret pivot hub
     ctx.beginPath();
-    ctx.arc(0, 0, 8, 0, Math.PI * 2);
-    ctx.fillStyle = '#10162c';
+    ctx.arc(0, 0, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#0b1126';
     ctx.strokeStyle = '#00f3ff';
     ctx.lineWidth = 2;
     ctx.fill();
     ctx.stroke();
 
     ctx.restore();
+    ctx.restore();
   }
 
-  drawRange(ctx) {
+  drawRange(ctx, originX = 0, originY = 0) {
     ctx.save();
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.range, 0, Math.PI * 2);
+    Isometric.drawIsoCircle(ctx, this.x, this.y, this.range, originX, originY);
     ctx.strokeStyle = 'rgba(0, 243, 255, 0.08)';
     ctx.lineWidth = 1;
-    ctx.setLineDash([4, 6]);
+    ctx.setLineDash([6, 6]);
     ctx.stroke();
     ctx.restore();
   }
