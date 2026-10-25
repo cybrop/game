@@ -21,6 +21,10 @@
         <span class="hud-sub" id="wave-progress">Wave in progress</span>
       </div>
       <div class="hud-box">
+        <span class="hud-label">SHARDS:</span>
+        <span id="hud-shards" class="hud-val neon-yellow">0</span>
+      </div>
+      <div class="hud-box">
         <span class="hud-label">CORE INTEGRITY:</span>
         <span id="core-hp-text" class="hud-val neon-green">100 / 100</span>
       </div>
@@ -30,8 +34,6 @@
       <!-- Main Arena Canvas -->
       <div id="canvas-container">
         <canvas id="gameCanvas"></canvas>
-
-        <!-- Floating Damage Canvas Overlay -->
         <div id="click-hint">Tip: Click anywhere to call an orbital strike</div>
       </div>
 
@@ -94,33 +96,118 @@
 
         <div class="sidebar-footer">
           <div class="stat-row">
-            <span>Range:</span>
-            <span id="stat-range">240px</span>
+            <span>Tesla Coil:</span>
+            <span id="stat-tesla" class="neon-cyan">Locked</span>
+          </div>
+          <div class="stat-row">
+            <span>Cryo Field:</span>
+            <span id="stat-cryo" class="neon-cyan">Locked</span>
           </div>
           <div class="stat-row">
             <span>Enemies Defeated:</span>
             <span id="stat-kills">0</span>
           </div>
+          <button id="btn-open-workshop" class="secondary-btn">OPEN WORKSHOP</button>
         </div>
       </aside>
     </div>
 
-    <!-- Game Over Modal -->
+    <!-- Core Breach (Game Over) Modal -->
     <div id="game-over-modal" class="overlay hidden">
       <div class="modal-box">
         <h1 class="neon-red">CORE BREACH DETECTED</h1>
-        <p>The dark energy drill was overwhelmed by the swarm.</p>
-        <div class="stats-summary">
-          <div>Waves Survived: <strong id="summary-waves">0</strong></div>
-          <div>Total Biomass Extracted: <strong id="summary-energy">0</strong></div>
-          <div>Threats Eliminated: <strong id="summary-kills">0</strong></div>
+        <p>Drill overwhelmed. Shard extraction completed.</p>
+        
+        <div class="shards-payout-box">
+          <span class="payout-label">CORE SHARDS EXTRACTED:</span>
+          <span id="payout-shards" class="payout-val neon-yellow">+0</span>
         </div>
-        <button id="restart-run-btn" class="action-btn">REDEPLOY DRILL</button>
+
+        <div class="stats-summary">
+          <div>Waves Cleared: <strong id="summary-waves">0</strong></div>
+          <div>Biomass Harvested: <strong id="summary-energy">0</strong></div>
+          <div>Hostiles Purged: <strong id="summary-kills">0</strong></div>
+          <div>Total Core Shards: <strong id="summary-total-shards" class="neon-yellow">0</strong></div>
+        </div>
+
+        <div class="modal-actions">
+          <button id="modal-workshop-btn" class="secondary-btn">VISIT WORKSHOP</button>
+          <button id="restart-run-btn" class="action-btn">REDEPLOY DRILL</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Persistent Meta Workshop Screen -->
+    <div id="workshop-modal" class="overlay hidden">
+      <div class="modal-box workshop-box">
+        <div class="workshop-header">
+          <h1 class="neon-cyan">TECH LAB // WORKSHOP</h1>
+          <div class="workshop-shards-counter">
+            CORE SHARDS: <span id="workshop-shards-val" class="neon-yellow">0</span>
+          </div>
+        </div>
+
+        <p class="workshop-desc">Install permanent orbital modifications that persist across all extractions.</p>
+
+        <div class="workshop-grid">
+          <!-- Permanent Base Energy -->
+          <div class="meta-card">
+            <div class="meta-title">Overcharged Capacitors</div>
+            <div class="meta-desc">+2.5 Base Energy / sec</div>
+            <div class="meta-level">Level <span id="meta-lvl-baseEnergy">0</span></div>
+            <button class="upgrade-btn" id="btn-meta-baseEnergy">
+              UPGRADE (<span id="meta-cost-baseEnergy">10</span> SHARDS)
+            </button>
+          </div>
+
+          <!-- Permanent Base HP -->
+          <div class="meta-card">
+            <div class="meta-title">Reinforced Plating</div>
+            <div class="meta-desc">+40 Starting Core HP</div>
+            <div class="meta-level">Level <span id="meta-lvl-baseHp">0</span></div>
+            <button class="upgrade-btn" id="btn-meta-baseHp">
+              UPGRADE (<span id="meta-cost-baseHp">12</span> SHARDS)
+            </button>
+          </div>
+
+          <!-- Permanent Base Damage -->
+          <div class="meta-card">
+            <div class="meta-title">High-Velocity Cores</div>
+            <div class="meta-desc">+5 Base Projectile Damage</div>
+            <div class="meta-level">Level <span id="meta-lvl-baseDamage">0</span></div>
+            <button class="upgrade-btn" id="btn-meta-baseDamage">
+              UPGRADE (<span id="meta-cost-baseDamage">15</span> SHARDS)
+            </button>
+          </div>
+
+          <!-- Unlock Tesla Coil -->
+          <div class="meta-card">
+            <div class="meta-title">Tesla Arc Coil</div>
+            <div class="meta-desc">Automated lightning discharge jumping to 3 enemies</div>
+            <div class="meta-level"><span id="meta-status-tesla">LOCKED</span></div>
+            <button class="upgrade-btn" id="btn-meta-unlockTesla">
+              UNLOCK (40 SHARDS)
+            </button>
+          </div>
+
+          <!-- Unlock Cryo Field -->
+          <div class="meta-card">
+            <div class="meta-title">Cryo Emitter Field</div>
+            <div class="meta-desc">Aura slows enemies near core by 50% + frost damage</div>
+            <div class="meta-level"><span id="meta-status-cryo">LOCKED</span></div>
+            <button class="upgrade-btn" id="btn-meta-unlockCryo">
+              UNLOCK (50 SHARDS)
+            </button>
+          </div>
+        </div>
+
+        <div class="workshop-footer">
+          <button id="close-workshop-btn" class="action-btn">RETURN TO MISSION</button>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Entry Script -->
   <script type="module" src="src/main.js"></script>
 </body>
 </html>
