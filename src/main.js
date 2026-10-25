@@ -12,10 +12,31 @@ const ctx = canvas.getContext('2d');
 
 function resizeCanvas() {
   const container = document.getElementById('canvas-container');
+  if (!container) return;
   canvas.width = container.clientWidth;
   canvas.height = container.clientHeight;
+
+  // Re-center stationary entities on window resize
+  const centerX = canvas.width / 2;
+  const centerY = canvas.height / 2;
+  if (core) {
+    core.x = centerX;
+    core.y = centerY;
+  }
+  if (turret) {
+    turret.x = centerX;
+    turret.y = centerY;
+  }
+  if (teslaCoil) {
+    teslaCoil.x = centerX;
+    teslaCoil.y = centerY;
+  }
+  if (cryoField) {
+    cryoField.x = centerX;
+    cryoField.y = centerY;
+  }
 }
-resizeCanvas();
+
 window.addEventListener('resize', resizeCanvas);
 
 // UI references
@@ -93,7 +114,7 @@ let core;
 let turret;
 let teslaCoil = null;
 let cryoField = null;
-let economy;
+let economy = new Economy();
 let waveManager;
 let bullets = [];
 let particles = [];
@@ -102,6 +123,7 @@ let shockwaves = [];
 let killsCount = 0;
 let isGameOver = false;
 let isPaused = false;
+let animationFrameId = null;
 let lastTimestamp = performance.now();
 
 export function addFloatingText(x, y, text, color = '#00f3ff') {
@@ -133,22 +155,32 @@ export function createExplosion(x, y, color = '#ff0055', count = 12) {
 }
 
 function initGame() {
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
+
   resizeCanvas();
   const centerX = canvas.width / 2;
   const centerY = canvas.height / 2;
 
-  economy = new Economy();
-  const meta = economy.meta;
+  // Preserve accumulated coreShards & meta across runs
+  const currentShards = economy.coreShards;
+  const currentMeta = { ...economy.meta };
 
-  const baseHp = 100 + meta.baseHp * 40;
-  const baseDamage = 15 + meta.baseDamage * 5;
+  economy = new Economy();
+  economy.coreShards = currentShards;
+  economy.meta = currentMeta;
+
+  const baseHp = 100 + economy.meta.baseHp * 40;
+  const baseDamage = 15 + economy.meta.baseDamage * 5;
 
   core = new Core(centerX, centerY, baseHp);
   turret = new Turret(centerX, centerY, baseDamage);
 
   // Initialize specialized weapons if unlocked in workshop
-  teslaCoil = meta.unlockTesla ? new TeslaCoil(centerX, centerY) : null;
-  cryoField = meta.unlockCryo ? new CryoField(centerX, centerY) : null;
+  teslaCoil = economy.meta.unlockTesla ? new TeslaCoil(centerX, centerY) : null;
+  cryoField = economy.meta.unlockCryo ? new CryoField(centerX, centerY) : null;
 
   waveManager = new WaveManager();
 
@@ -158,12 +190,16 @@ function initGame() {
   shockwaves = [];
   killsCount = 0;
   isGameOver = false;
+  isPaused = false;
+  lastTimestamp = performance.now();
 
   ui.gameOverModal.classList.add('hidden');
   ui.workshopModal.classList.add('hidden');
 
   updateUI();
   updateWorkshopUI();
+
+  animationFrameId = requestAnimationFrame(gameLoop);
 }
 
 function updateUI() {
@@ -183,7 +219,7 @@ function updateUI() {
 
   // Wave status
   if (waveManager.isIntermission) {
-    ui.waveProgress.textContent = `Next wave in ${(waveManager.intermissionTimer).toFixed(1)}s`;
+    ui.waveProgress.textContent = `Next wave in ${(Math.max(0, waveManager.intermissionTimer)).toFixed(1)}s`;
   } else {
     ui.waveProgress.textContent = `Enemies: ${waveManager.enemies.length + (waveManager.enemiesToSpawn - waveManager.enemiesSpawned)}`;
   }
@@ -308,6 +344,9 @@ ui.btnMetaBaseEnergy.addEventListener('click', () => {
 
 ui.btnMetaBaseHp.addEventListener('click', () => {
   if (economy.buyMetaUpgrade('baseHp')) {
+    const hpDiff = 40;
+    core.maxHp += hpDiff;
+    core.heal(hpDiff);
     updateWorkshopUI();
     updateUI();
   }
@@ -315,6 +354,7 @@ ui.btnMetaBaseHp.addEventListener('click', () => {
 
 ui.btnMetaBaseDamage.addEventListener('click', () => {
   if (economy.buyMetaUpgrade('baseDamage')) {
+    turret.damage += 5;
     updateWorkshopUI();
     updateUI();
   }
@@ -322,6 +362,9 @@ ui.btnMetaBaseDamage.addEventListener('click', () => {
 
 ui.btnMetaUnlockTesla.addEventListener('click', () => {
   if (economy.buyMetaUpgrade('unlockTesla')) {
+    if (!teslaCoil) {
+      teslaCoil = new TeslaCoil(canvas.width / 2, canvas.height / 2);
+    }
     updateWorkshopUI();
     updateUI();
   }
@@ -329,6 +372,9 @@ ui.btnMetaUnlockTesla.addEventListener('click', () => {
 
 ui.btnMetaUnlockCryo.addEventListener('click', () => {
   if (economy.buyMetaUpgrade('unlockCryo')) {
+    if (!cryoField) {
+      cryoField = new CryoField(canvas.width / 2, canvas.height / 2);
+    }
     updateWorkshopUI();
     updateUI();
   }
@@ -353,6 +399,7 @@ ui.closeWorkshopBtn.addEventListener('click', () => {
     ui.gameOverModal.classList.remove('hidden');
   } else {
     isPaused = false;
+    lastTimestamp = performance.now();
   }
 });
 
@@ -391,7 +438,6 @@ canvas.addEventListener('pointerdown', (e) => {
 function handleGameOver() {
   isGameOver = true;
 
-  // Calculate Shard Payout based on waves, enemies killed, and dark biomass mined
   const shardsEarned = economy.calculateShardPayout(
     waveManager.currentWave,
     killsCount,
@@ -569,7 +615,7 @@ function gameLoop(timestamp) {
     ctx.restore();
   }
 
-  requestAnimationFrame(gameLoop);
+  animationFrameId = requestAnimationFrame(gameLoop);
 }
 
 function drawGrid(ctx, width, height) {
@@ -594,6 +640,5 @@ function drawGrid(ctx, width, height) {
   ctx.restore();
 }
 
-// Start
+// Start game
 initGame();
-requestAnimationFrame(gameLoop);
