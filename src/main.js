@@ -42,6 +42,9 @@ let waveManager;
 let bullets = [];
 let floatingTexts = [];
 
+// Performance buffer for floating text
+const MAX_FLOATING_TEXTS = 40;
+
 function resizeCanvas() {
   const container = document.getElementById('canvas-container');
   if (!container) return;
@@ -98,6 +101,10 @@ export function triggerScreenShake(strength = 8) {
 }
 
 export function addFloatingText(x, y, text, color = '#00f3ff', isCritical = false) {
+  if (floatingTexts.length >= MAX_FLOATING_TEXTS) {
+    floatingTexts.shift();
+  }
+
   floatingTexts.push({
     x,
     y,
@@ -315,28 +322,34 @@ function handleGameOver() {
   });
 }
 
-// User Strike using Isometric Inverse Raycast
+// User Strike using Normalized Cross-Browser Isometric Inverse Raycast
 canvas.addEventListener('pointerdown', (e) => {
   if (gameState.isGameOver || gameState.isPaused) return;
   audio.init();
 
   const rect = canvas.getBoundingClientRect();
-  const screenClickX = (e.clientX - rect.left) * (logicalWidth / rect.width);
-  const screenClickY = (e.clientY - rect.top) * (logicalHeight / rect.height);
+  // Safe scale calculation accounting for CSS responsive downscaling or retina scaling
+  const scaleX = logicalWidth / Math.max(1, rect.width);
+  const scaleY = logicalHeight / Math.max(1, rect.height);
+
+  const screenClickX = (e.clientX - rect.left) * scaleX;
+  const screenClickY = (e.clientY - rect.top) * scaleY;
 
   const originX = logicalWidth / 2;
   const originY = logicalHeight / 2 + 30;
 
+  // Accurately unproject click from 2D screen into ground plane (z = 0)
   const worldPos = Isometric.screenToWorld(screenClickX, screenClickY, originX, originY, 0);
 
   audio.playShockwave();
   triggerScreenShake(7);
 
-  // Emit 2.5D floor shockwave on world position
+  // Emit 2.5D floor shockwave on the world plane
   particleSystem.emitShockwave(worldPos.x, worldPos.y, CONFIG.STRIKE.RADIUS, '#00f3ff');
 
   const strikeDamage = Math.round(turret.damage * CONFIG.STRIKE.DAMAGE_FACTOR);
-  waveManager.enemies.forEach((enemy) => {
+  for (let i = 0; i < waveManager.enemies.length; i++) {
+    const enemy = waveManager.enemies[i];
     const dist = Math.hypot(enemy.x - worldPos.x, enemy.y - worldPos.y);
     if (dist < CONFIG.STRIKE.RADIUS) {
       enemy.takeDamage(strikeDamage);
@@ -348,7 +361,7 @@ canvas.addEventListener('pointerdown', (e) => {
       enemy.x += Math.cos(angle) * CONFIG.STRIKE.KNOCKBACK;
       enemy.y += Math.sin(angle) * CONFIG.STRIKE.KNOCKBACK;
     }
-  });
+  }
 });
 
 // Physics & State Pipeline
@@ -459,8 +472,11 @@ function render(dt, timestamp) {
     floatingTexts
   });
 
-  const totalEntities = (waveManager ? waveManager.enemies.length : 0) + bullets.length + particleSystem.getActiveCount();
-  profiler.update(timestamp, totalEntities, performance.now() - frameStart);
+  const renderTime = performance.now() - frameStart;
+  const swarmCount = waveManager ? waveManager.enemies.length : 0;
+  const particleCount = particleSystem.getActiveCount();
+
+  profiler.update(timestamp, swarmCount, particleCount, renderTime);
 }
 
 const loop = new GameLoop(update, render);
