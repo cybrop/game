@@ -6,12 +6,12 @@ export class Turret {
   constructor(x = 0, y = 0, baseDamage = 15) {
     this.x = x;
     this.y = y;
-    this.elevation = 42; // Elevated above Beacon base
+    this.elevation = 42;
     this.angle = 0;
     this.range = 240;
     this.damage = baseDamage;
-    this.fireCooldown = 450; // ms
-    this.timeSinceLastShot = 0; // ms
+    this.fireCooldown = 450;
+    this.timeSinceLastShot = 0;
     this.target = null;
     this.muzzleRecoil = 0;
   }
@@ -37,12 +37,16 @@ export class Turret {
 
   findNearestEnemy(enemies) {
     let nearest = null;
-    let minDistance = this.range;
+    let minDistanceSq = this.range * this.range;
 
-    for (const enemy of enemies) {
-      const dist = Math.hypot(enemy.x - this.x, enemy.y - this.y);
-      if (dist <= minDistance) {
-        minDistance = dist;
+    for (let i = 0; i < enemies.length; i++) {
+      const enemy = enemies[i];
+      const dx = enemy.x - this.x;
+      const dy = enemy.y - this.y;
+      const distSq = dx * dx + dy * dy;
+
+      if (distSq <= minDistanceSq) {
+        minDistanceSq = distSq;
         nearest = enemy;
       }
     }
@@ -64,7 +68,7 @@ export class Turret {
   }
 
   draw(ctx, originX = 0, originY = 0) {
-    // 1. Iron Golem Chassis / Stand Base
+    // 1. Stand Base
     const standColors = {
       top: '#d0d4dc',
       left: '#9ea5b3',
@@ -89,11 +93,10 @@ export class Turret {
     ctx.lineWidth = 1.5;
     ctx.strokeRect(-hx, -hy - 8, headSize, headSize);
 
-    // Iron Golem Brow / Top Plate
+    // Iron Golem Brow Plate
     ctx.fillStyle = '#b8bec9';
     ctx.fillRect(-hx, -hy - 8, headSize, 4);
 
-    // Directional aim face
     const dirX = Math.cos(this.angle) * 4;
     const dirY = Math.sin(this.angle) * 2;
 
@@ -102,7 +105,7 @@ export class Turret {
     ctx.fillRect(-hx + 3 + dirX, -hy - 2 + dirY, 3, 2.5);
     ctx.fillRect(hx - 6 + dirX, -hy - 2 + dirY, 3, 2.5);
 
-    // Iconic Dispenser Mouth Opening
+    // Dispenser Mouth Opening
     const mouthX = dirX * 1.5;
     const mouthY = 2 + dirY * 1.2;
     const recoilOffset = this.muzzleRecoil * 2;
