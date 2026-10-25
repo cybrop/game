@@ -16,7 +16,7 @@ export class Turret {
     this.muzzleRecoil = 0;
   }
 
-  update(dt, enemies, bullets) {
+  update(dt, enemies, bullets, hasMultishot = false) {
     this.timeSinceLastShot += dt * 1000;
     if (this.muzzleRecoil > 0) {
       this.muzzleRecoil = Math.max(0, this.muzzleRecoil - dt * 5);
@@ -28,7 +28,7 @@ export class Turret {
       this.angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
 
       if (this.timeSinceLastShot >= this.fireCooldown) {
-        this.fire(bullets);
+        this.fire(bullets, hasMultishot);
         this.timeSinceLastShot = 0;
         this.muzzleRecoil = 1;
       }
@@ -53,7 +53,7 @@ export class Turret {
     return nearest;
   }
 
-  fire(bullets) {
+  fire(bullets, hasMultishot = false) {
     const barrelOffset = 16;
     const spawnX = this.x + Math.cos(this.angle) * barrelOffset;
     const spawnY = this.y + Math.sin(this.angle) * barrelOffset;
@@ -63,21 +63,24 @@ export class Turret {
       ? Math.hypot(this.target.x - this.x, this.target.y - this.y)
       : this.range;
 
+    // Standard arrow
     bullets.push(new Bullet(spawnX, spawnY, spawnZ, this.angle, this.damage, targetDistance));
+
+    // Multishot Enchantment: 2 extra spread arrows
+    if (hasMultishot) {
+      bullets.push(new Bullet(spawnX, spawnY, spawnZ, this.angle - 0.22, this.damage * 0.85, targetDistance));
+      bullets.push(new Bullet(spawnX, spawnY, spawnZ, this.angle + 0.22, this.damage * 0.85, targetDistance));
+    }
+
     audio.playArrowTwang();
   }
 
   draw(ctx, originX = 0, originY = 0) {
-    // 1. Stand Base
     const standColors = {
-      top: '#d0d4dc',
-      left: '#9ea5b3',
-      right: '#717887',
-      stroke: '#353a44'
+      top: '#d0d4dc', left: '#9ea5b3', right: '#717887', stroke: '#353a44'
     };
     Isometric.drawCube(ctx, this.x, this.y, this.elevation - 8, 14, 14, 8, standColors, originX, originY);
 
-    // 2. Swiveling Dispenser Head Mounted on Top
     const headScreen = Isometric.worldToScreen(this.x, this.y, this.elevation + 6, originX, originY);
 
     ctx.save();
@@ -93,19 +96,16 @@ export class Turret {
     ctx.lineWidth = 1.5;
     ctx.strokeRect(-hx, -hy - 8, headSize, headSize);
 
-    // Iron Golem Brow Plate
     ctx.fillStyle = '#b8bec9';
     ctx.fillRect(-hx, -hy - 8, headSize, 4);
 
     const dirX = Math.cos(this.angle) * 4;
     const dirY = Math.sin(this.angle) * 2;
 
-    // Redstone eyes tracking target
     ctx.fillStyle = '#d61c1c';
     ctx.fillRect(-hx + 3 + dirX, -hy - 2 + dirY, 3, 2.5);
     ctx.fillRect(hx - 6 + dirX, -hy - 2 + dirY, 3, 2.5);
 
-    // Dispenser Mouth Opening
     const mouthX = dirX * 1.5;
     const mouthY = 2 + dirY * 1.2;
     const recoilOffset = this.muzzleRecoil * 2;
@@ -118,7 +118,6 @@ export class Turret {
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // Arrow launch smoke puff
     if (this.muzzleRecoil > 0.1) {
       ctx.beginPath();
       ctx.arc(mouthX + Math.cos(this.angle) * 8, mouthY + Math.sin(this.angle) * 4, 5 * this.muzzleRecoil, 0, Math.PI * 2);
