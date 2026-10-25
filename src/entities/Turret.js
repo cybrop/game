@@ -25,7 +25,6 @@ export class Turret {
     this.target = this.findNearestEnemy(enemies);
 
     if (this.target) {
-      // Calculate 2D aim angle towards enemy world coordinates
       this.angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
 
       if (this.timeSinceLastShot >= this.fireCooldown) {
@@ -60,9 +59,8 @@ export class Turret {
       ? Math.hypot(this.target.x - this.x, this.target.y - this.y)
       : this.range;
 
-    // Fires blocky arrow with 3D ballistic trajectory
     bullets.push(new Bullet(spawnX, spawnY, spawnZ, this.angle, this.damage, targetDistance));
-    audio.playLaser();
+    audio.playArrowTwang();
   }
 
   draw(ctx, originX = 0, originY = 0) {
@@ -81,12 +79,10 @@ export class Turret {
     ctx.save();
     ctx.translate(headScreen.x, headScreen.y);
 
-    // Dispenser block outer casing
     const headSize = 18;
     const hx = headSize / 2;
     const hy = headSize * 0.5;
 
-    // Head base block
     ctx.fillStyle = '#55555c';
     ctx.fillRect(-hx, -hy - 8, headSize, headSize);
     ctx.strokeStyle = '#222226';
@@ -106,7 +102,7 @@ export class Turret {
     ctx.fillRect(-hx + 3 + dirX, -hy - 2 + dirY, 3, 2.5);
     ctx.fillRect(hx - 6 + dirX, -hy - 2 + dirY, 3, 2.5);
 
-    // Iconic Dispenser Mouth Opening (Carved circle firing arrows)
+    // Iconic Dispenser Mouth Opening
     const mouthX = dirX * 1.5;
     const mouthY = 2 + dirY * 1.2;
     const recoilOffset = this.muzzleRecoil * 2;
@@ -119,11 +115,11 @@ export class Turret {
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // Muzzle flash / arrow launch smoke puff
+    // Arrow launch smoke puff
     if (this.muzzleRecoil > 0.1) {
       ctx.beginPath();
-      ctx.arc(mouthX + Math.cos(this.angle) * 8, mouthY + Math.sin(this.angle) * 4, 6 * this.muzzleRecoil, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(230, 230, 230, ${this.muzzleRecoil * 0.8})`;
+      ctx.arc(mouthX + Math.cos(this.angle) * 8, mouthY + Math.sin(this.angle) * 4, 5 * this.muzzleRecoil, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(220, 220, 220, ${this.muzzleRecoil * 0.8})`;
       ctx.fill();
     }
 
@@ -133,7 +129,7 @@ export class Turret {
   drawRange(ctx, originX = 0, originY = 0) {
     ctx.save();
     Isometric.drawIsoCircle(ctx, this.x, this.y, this.range, originX, originY);
-    ctx.strokeStyle = 'rgba(214, 28, 28, 0.15)'; // Redstone range aura
+    ctx.strokeStyle = 'rgba(214, 28, 28, 0.15)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([6, 6]);
     ctx.stroke();
