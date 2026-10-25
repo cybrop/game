@@ -1,3 +1,6 @@
+import { CONFIG } from './config.js';
+import { GameState } from './core/GameState.js';
+import { GameLoop } from './core/Loop.js';
 import { Core } from './core/Core.js';
 import { Turret } from './entities/Turret.js';
 import { TeslaCoil } from './entities/TeslaCoil.js';
@@ -7,18 +10,37 @@ import { Economy } from './systems/Economy.js';
 import { AudioManager } from './systems/Audio.js';
 import { CrazyGamesSDK } from './sdk/crazy.js';
 
-// Setup Canvas and SDK
+// Modular UI components
+import { TopHud } from './ui/TopHud.js';
+import { UpgradeSidebar } from './ui/UpgradeSidebar.js';
+import { GameOverModal } from './ui/GameOverModal.js';
+import { WorkshopModal } from './ui/WorkshopModal.js';
+import { Profiler } from './ui/Profiler.js';
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
 export const audio = new AudioManager();
 export const crazySdk = new CrazyGamesSDK();
+export const gameState = new GameState();
 
-// High DPI Scaling & Responsive letterboxing
 let dpr = 1;
-let logicalWidth = 760;
-let logicalHeight = 656;
+let logicalWidth = CONFIG.CANVAS.DEFAULT_WIDTH;
+let logicalHeight = CONFIG.CANVAS.DEFAULT_HEIGHT;
 
+let core;
+let turret;
+let teslaCoil = null;
+let cryoField = null;
+let economy = new Economy();
+let waveManager;
+let bullets = [];
+let particles = [];
+let floatingTexts = [];
+let shockwaves = [];
+let veinPulseTime = 0;
+
+// Screen Resize
 function resizeCanvas() {
   const container = document.getElementById('canvas-container');
   if (!container) return;
@@ -33,151 +55,54 @@ function resizeCanvas() {
   const centerX = logicalWidth / 2;
   const centerY = logicalHeight / 2;
 
-  if (core) {
-    core.x = centerX;
-    core.y = centerY;
-  }
-  if (turret) {
-    turret.x = centerX;
-    turret.y = centerY;
-  }
-  if (teslaCoil) {
-    teslaCoil.x = centerX;
-    teslaCoil.y = centerY;
-  }
-  if (cryoField) {
-    cryoField.x = centerX;
-    cryoField.y = centerY;
-  }
+  if (core) { core.x = centerX; core.y = centerY; }
+  if (turret) { turret.x = centerX; turret.y = centerY; }
+  if (teslaCoil) { teslaCoil.x = centerX; teslaCoil.y = centerY; }
+  if (cryoField) { cryoField.x = centerX; cryoField.y = centerY; }
 }
 
 window.addEventListener('resize', resizeCanvas);
 document.addEventListener('fullscreenchange', resizeCanvas);
 document.addEventListener('webkitfullscreenchange', resizeCanvas);
 
-// UI references
-const ui = {
-  energy: document.getElementById('dark-energy'),
-  energyRate: document.getElementById('energy-rate'),
-  wave: document.getElementById('wave-counter'),
-  waveProgress: document.getElementById('wave-progress'),
-  coreHpText: document.getElementById('core-hp-text'),
-  hudShards: document.getElementById('hud-shards'),
-  kills: document.getElementById('stat-kills'),
-  range: document.getElementById('stat-range'),
-  statTesla: document.getElementById('stat-tesla'),
-  statCryo: document.getElementById('stat-cryo'),
-  audioToggleBtn: document.getElementById('audio-toggle-btn'),
-  audioIcon: document.getElementById('audio-icon'),
-  fullscreenBtn: document.getElementById('fullscreen-btn'),
-  perfToggleBtn: document.getElementById('perf-toggle-btn'),
+// UI Initialization
+const topHud = new TopHud('top-hud', {
+  onToggleAudio: () => audio.toggleMute(),
+  onToggleFullscreen: () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else if (document.exitFullscreen) {
+      document.exitFullscreen();
+    }
+  },
+  onTogglePerf: () => profiler.toggle()
+});
 
-  // Profiler UI
-  perfOverlay: document.getElementById('perf-overlay'),
-  perfFps: document.getElementById('perf-fps'),
-  perfEntities: document.getElementById('perf-entities'),
-  perfMs: document.getElementById('perf-ms'),
+const upgradeSidebar = new UpgradeSidebar('upgrade-sidebar', {
+  onBuyUpgrade: (type) => handleBuyInRunUpgrade(type),
+  onOpenWorkshop: () => openWorkshop()
+});
 
-  // Upgrade buttons
-  lvlDamage: document.getElementById('lvl-damage'),
-  valDamage: document.getElementById('val-damage'),
-  costDamage: document.getElementById('cost-damage'),
-  btnDamage: document.getElementById('btn-upgrade-damage'),
+const gameOverModal = new GameOverModal('game-over-modal', {
+  onDoubleShards: () => handleDoubleShards(),
+  onRevive: () => handleEmergencyRevive(),
+  onOpenWorkshop: () => {
+    gameOverModal.hide();
+    openWorkshop();
+  },
+  onRestart: () => initGame()
+});
 
-  lvlFirerate: document.getElementById('lvl-firerate'),
-  valFirerate: document.getElementById('val-firerate'),
-  costFirerate: document.getElementById('cost-firerate'),
-  btnFirerate: document.getElementById('btn-upgrade-firerate'),
+const workshopModal = new WorkshopModal('workshop-modal', {
+  onClose: () => closeWorkshop(),
+  onBuyMeta: (type) => handleBuyMetaUpgrade(type)
+});
 
-  lvlHealth: document.getElementById('lvl-health'),
-  valHealth: document.getElementById('val-health'),
-  costHealth: document.getElementById('cost-health'),
-  btnHealth: document.getElementById('btn-upgrade-health'),
-
-  lvlYield: document.getElementById('lvl-yield'),
-  valYield: document.getElementById('val-yield'),
-  costYield: document.getElementById('cost-yield'),
-  btnYield: document.getElementById('btn-upgrade-yield'),
-
-  // Game over modal
-  gameOverModal: document.getElementById('game-over-modal'),
-  payoutShards: document.getElementById('payout-shards'),
-  doubleShardsAmount: document.getElementById('double-shards-amount'),
-  btnRewardedDouble: document.getElementById('btn-rewarded-double'),
-  btnRewardedRevive: document.getElementById('btn-rewarded-revive'),
-  summaryWaves: document.getElementById('summary-waves'),
-  summaryEnergy: document.getElementById('summary-energy'),
-  summaryKills: document.getElementById('summary-kills'),
-  summaryTotalShards: document.getElementById('summary-total-shards'),
-  modalWorkshopBtn: document.getElementById('modal-workshop-btn'),
-  restartBtn: document.getElementById('restart-run-btn'),
-
-  // Workshop modal
-  btnOpenWorkshop: document.getElementById('btn-open-workshop'),
-  workshopModal: document.getElementById('workshop-modal'),
-  closeWorkshopBtn: document.getElementById('close-workshop-btn'),
-  workshopShardsVal: document.getElementById('workshop-shards-val'),
-
-  // Workshop buttons
-  metaLvlBaseEnergy: document.getElementById('meta-lvl-baseEnergy'),
-  metaCostBaseEnergy: document.getElementById('meta-cost-baseEnergy'),
-  btnMetaBaseEnergy: document.getElementById('btn-meta-baseEnergy'),
-
-  metaLvlBaseHp: document.getElementById('meta-lvl-baseHp'),
-  metaCostBaseHp: document.getElementById('meta-cost-baseHp'),
-  btnMetaBaseHp: document.getElementById('btn-meta-baseHp'),
-
-  metaLvlBaseDamage: document.getElementById('meta-lvl-baseDamage'),
-  metaCostBaseDamage: document.getElementById('meta-cost-baseDamage'),
-  btnMetaBaseDamage: document.getElementById('btn-meta-baseDamage'),
-
-  metaStatusTesla: document.getElementById('meta-status-tesla'),
-  btnMetaUnlockTesla: document.getElementById('btn-meta-unlockTesla'),
-
-  metaStatusCryo: document.getElementById('meta-status-cryo'),
-  btnMetaUnlockCryo: document.getElementById('btn-meta-unlockCryo')
-};
-
-// Game Entities & Systems
-let core;
-let turret;
-let teslaCoil = null;
-let cryoField = null;
-let economy = new Economy();
-let waveManager;
-let bullets = [];
-let particles = [];
-let floatingTexts = [];
-let shockwaves = [];
-let killsCount = 0;
-let isGameOver = false;
-let isPaused = false;
-let animationFrameId = null;
-let lastTimestamp = performance.now();
-
-// Rewarded Ad run flags
-let currentRunShardsEarned = 0;
-let hasDoubledShards = false;
-let hasRevivedThisRun = false;
-
-// Profiling metrics
-let showProfiler = false;
-let frameCount = 0;
-let lastFpsUpdate = performance.now();
-
-// Screen Shake Engine
-let screenShake = {
-  intensity: 0,
-  decay: 0.9,
-  offsetX: 0,
-  offsetY: 0
-};
+const profiler = new Profiler('perf-overlay');
 
 export function triggerScreenShake(strength = 8) {
-  screenShake.intensity = Math.max(screenShake.intensity, strength);
+  gameState.triggerShake(strength);
 }
-
-let veinPulseTime = 0;
 
 export function addFloatingText(x, y, text, color = '#00f3ff', isCritical = false) {
   floatingTexts.push({
@@ -210,12 +135,133 @@ export function createExplosion(x, y, color = '#ff0055', count = 14, isHeavy = f
   }
 }
 
-function initGame() {
-  if (animationFrameId) {
-    cancelAnimationFrame(animationFrameId);
-    animationFrameId = null;
+function handleBuyInRunUpgrade(type) {
+  if (economy.buyUpgrade(type)) {
+    audio.playUpgrade();
+    if (type === 'damage') {
+      const baseDamage = CONFIG.TURRET.BASE_DAMAGE + economy.meta.baseDamage * CONFIG.TURRET.DAMAGE_PER_META_LEVEL;
+      turret.damage = Math.round(baseDamage * Math.pow(1.22, economy.upgrades.damage - 1));
+    } else if (type === 'firerate') {
+      turret.fireCooldown = Math.max(
+        CONFIG.TURRET.MIN_FIRE_COOLDOWN,
+        Math.round(CONFIG.TURRET.BASE_FIRE_COOLDOWN * Math.pow(0.9, economy.upgrades.firerate - 1))
+      );
+    } else if (type === 'health') {
+      const oldMax = core.maxHp;
+      const baseHp = CONFIG.CORE.BASE_HP + economy.meta.baseHp * CONFIG.CORE.HP_PER_META_LEVEL;
+      core.maxHp = Math.round(baseHp * Math.pow(1.25, economy.upgrades.health - 1));
+      core.heal(core.maxHp - oldMax);
+    }
+    syncAllUI();
   }
+}
 
+function handleBuyMetaUpgrade(type) {
+  if (economy.buyMetaUpgrade(type)) {
+    audio.playUpgrade();
+    if (type === 'baseHp') {
+      core.maxHp += CONFIG.CORE.HP_PER_META_LEVEL;
+      core.heal(CONFIG.CORE.HP_PER_META_LEVEL);
+    } else if (type === 'baseDamage') {
+      turret.damage += CONFIG.TURRET.DAMAGE_PER_META_LEVEL;
+    } else if (type === 'unlockTesla' && !teslaCoil) {
+      teslaCoil = new TeslaCoil(logicalWidth / 2, logicalHeight / 2);
+    } else if (type === 'unlockCryo' && !cryoField) {
+      cryoField = new CryoField(logicalWidth / 2, logicalHeight / 2);
+    }
+    syncAllUI();
+  }
+}
+
+function openWorkshop() {
+  gameState.isPaused = true;
+  crazySdk.gameplayStop();
+  workshopModal.update(economy);
+  workshopModal.show();
+}
+
+function closeWorkshop() {
+  workshopModal.hide();
+  if (gameState.isGameOver) {
+    gameOverModal.show({
+      shardsEarned: gameState.currentRunShardsEarned,
+      wave: waveManager.currentWave,
+      totalEnergy: economy.totalEarned,
+      kills: gameState.kills,
+      totalShards: economy.coreShards,
+      hasRevived: gameState.hasRevivedThisRun
+    });
+  } else {
+    gameState.isPaused = false;
+    loop.resetTime();
+    crazySdk.gameplayStart();
+  }
+}
+
+function handleDoubleShards() {
+  if (gameState.hasDoubledShards) return;
+  crazySdk.requestRewardedAd({
+    adStarted: () => audio.init(),
+    rewardGiven: () => {
+      gameState.hasDoubledShards = true;
+      economy.addShards(gameState.currentRunShardsEarned);
+      gameOverModal.show({
+        shardsEarned: gameState.currentRunShardsEarned * 2,
+        wave: waveManager.currentWave,
+        totalEnergy: economy.totalEarned,
+        kills: gameState.kills,
+        totalShards: economy.coreShards,
+        hasRevived: gameState.hasRevivedThisRun
+      });
+      audio.playUpgrade();
+    }
+  });
+}
+
+function handleEmergencyRevive() {
+  if (gameState.hasRevivedThisRun) return;
+  crazySdk.requestRewardedAd({
+    adStarted: () => audio.init(),
+    rewardGiven: () => {
+      gameState.hasRevivedThisRun = true;
+      gameState.isGameOver = false;
+      core.heal(Math.round(core.maxHp * 0.5));
+      waveManager.enemies.forEach(e => e.takeDamage(999));
+      bullets = [];
+
+      gameOverModal.hide();
+      audio.playShockwave();
+      triggerScreenShake(12);
+      crazySdk.gameplayStart();
+      loop.resetTime();
+    }
+  });
+}
+
+function syncAllUI() {
+  topHud.update({
+    energy: economy.energy,
+    energyRate: economy.getEnergyRate(),
+    wave: waveManager ? waveManager.currentWave : 1,
+    waveIntermission: waveManager ? waveManager.isIntermission : false,
+    intermissionTime: waveManager ? waveManager.intermissionTimer : 0,
+    remainingEnemies: waveManager ? waveManager.enemies.length + (waveManager.enemiesToSpawn - waveManager.enemiesSpawned) : 0,
+    shards: economy.coreShards,
+    currentHp: core ? core.currentHp : 0,
+    maxHp: core ? core.maxHp : 100
+  });
+
+  upgradeSidebar.update({
+    economy,
+    turret,
+    core,
+    kills: gameState.kills
+  });
+
+  workshopModal.update(economy);
+}
+
+function initGame() {
   resizeCanvas();
   const centerX = logicalWidth / 2;
   const centerY = logicalHeight / 2;
@@ -227,8 +273,10 @@ function initGame() {
   economy.coreShards = currentShards;
   economy.meta = currentMeta;
 
-  const baseHp = 100 + economy.meta.baseHp * 40;
-  const baseDamage = 15 + economy.meta.baseDamage * 5;
+  gameState.reset();
+
+  const baseHp = CONFIG.CORE.BASE_HP + economy.meta.baseHp * CONFIG.CORE.HP_PER_META_LEVEL;
+  const baseDamage = CONFIG.TURRET.BASE_DAMAGE + economy.meta.baseDamage * CONFIG.TURRET.DAMAGE_PER_META_LEVEL;
 
   core = new Core(centerX, centerY, baseHp);
   turret = new Turret(centerX, centerY, baseDamage);
@@ -242,310 +290,54 @@ function initGame() {
   particles = [];
   floatingTexts = [];
   shockwaves = [];
-  killsCount = 0;
-  isGameOver = false;
-  isPaused = false;
-  hasDoubledShards = false;
-  hasRevivedThisRun = false;
-  screenShake.intensity = 0;
-  lastTimestamp = performance.now();
 
-  ui.gameOverModal.classList.add('hidden');
-  ui.workshopModal.classList.add('hidden');
-  ui.btnRewardedDouble.disabled = false;
-  ui.btnRewardedRevive.disabled = false;
+  gameOverModal.hide();
+  workshopModal.hide();
 
-  updateUI();
-  updateWorkshopUI();
-
-  // Notify SDK of gameplay session commencement
+  syncAllUI();
   crazySdk.gameplayStart();
-
-  animationFrameId = requestAnimationFrame(gameLoop);
+  loop.start();
 }
 
-function updateUI() {
-  ui.energy.textContent = Math.floor(economy.energy);
-  ui.energyRate.textContent = economy.getEnergyRate().toFixed(1);
-  ui.wave.textContent = waveManager.currentWave;
-  ui.coreHpText.textContent = `${Math.max(0, Math.ceil(core.currentHp))} / ${core.maxHp}`;
-  ui.hudShards.textContent = economy.coreShards;
-  ui.kills.textContent = killsCount;
-  ui.range.textContent = `${turret.range}px`;
-
-  ui.statTesla.textContent = economy.meta.unlockTesla ? 'Active' : 'Locked';
-  ui.statTesla.style.color = economy.meta.unlockTesla ? '#00ff88' : '#7482a5';
-
-  ui.statCryo.textContent = economy.meta.unlockCryo ? 'Active' : 'Locked';
-  ui.statCryo.style.color = economy.meta.unlockCryo ? '#00f3ff' : '#7482a5';
-
-  if (waveManager.isIntermission) {
-    ui.waveProgress.textContent = `Next wave in ${(Math.max(0, waveManager.intermissionTimer)).toFixed(1)}s`;
-  } else {
-    ui.waveProgress.textContent = `Enemies: ${waveManager.enemies.length + (waveManager.enemiesToSpawn - waveManager.enemiesSpawned)}`;
-  }
-
-  // Damage Upgrade
-  const damageCost = economy.getUpgradeCost('damage');
-  ui.lvlDamage.textContent = economy.upgrades.damage;
-  ui.valDamage.textContent = turret.damage;
-  ui.costDamage.textContent = damageCost;
-  ui.btnDamage.disabled = economy.energy < damageCost;
-
-  // Fire Rate Upgrade
-  const firerateCost = economy.getUpgradeCost('firerate');
-  ui.lvlFirerate.textContent = economy.upgrades.firerate;
-  ui.valFirerate.textContent = (turret.fireCooldown / 1000).toFixed(2);
-  ui.costFirerate.textContent = firerateCost;
-  ui.btnFirerate.disabled = economy.energy < firerateCost;
-
-  // Health Upgrade
-  const healthCost = economy.getUpgradeCost('health');
-  ui.lvlHealth.textContent = economy.upgrades.health;
-  ui.valHealth.textContent = core.maxHp;
-  ui.costHealth.textContent = healthCost;
-  ui.btnHealth.disabled = economy.energy < healthCost;
-
-  // Extractor Yield Upgrade
-  const yieldCost = economy.getUpgradeCost('yield');
-  ui.lvlYield.textContent = economy.upgrades.yield;
-  ui.valYield.textContent = economy.getEnergyRate().toFixed(1);
-  ui.costYield.textContent = yieldCost;
-  ui.btnYield.disabled = economy.energy < yieldCost;
-}
-
-function updateWorkshopUI() {
-  const meta = economy.meta;
-  ui.workshopShardsVal.textContent = economy.coreShards;
-
-  const energyCost = economy.getMetaCost('baseEnergy');
-  ui.metaLvlBaseEnergy.textContent = meta.baseEnergy;
-  ui.metaCostBaseEnergy.textContent = energyCost;
-  ui.btnMetaBaseEnergy.disabled = economy.coreShards < energyCost;
-
-  const hpCost = economy.getMetaCost('baseHp');
-  ui.metaLvlBaseHp.textContent = meta.baseHp;
-  ui.metaCostBaseHp.textContent = hpCost;
-  ui.btnMetaBaseHp.disabled = economy.coreShards < hpCost;
-
-  const damageCost = economy.getMetaCost('baseDamage');
-  ui.metaLvlBaseDamage.textContent = meta.baseDamage;
-  ui.metaCostBaseDamage.textContent = damageCost;
-  ui.btnMetaBaseDamage.disabled = economy.coreShards < damageCost;
-
-  if (meta.unlockTesla) {
-    ui.metaStatusTesla.textContent = 'INSTALLED';
-    ui.metaStatusTesla.style.color = '#00ff88';
-    ui.btnMetaUnlockTesla.disabled = true;
-    ui.btnMetaUnlockTesla.textContent = 'PURCHASED';
-  } else {
-    ui.metaStatusTesla.textContent = 'LOCKED';
-    ui.metaStatusTesla.style.color = '#ffd000';
-    ui.btnMetaUnlockTesla.disabled = economy.coreShards < 40;
-    ui.btnMetaUnlockTesla.textContent = 'UNLOCK (40 SHARDS)';
-  }
-
-  if (meta.unlockCryo) {
-    ui.metaStatusCryo.textContent = 'INSTALLED';
-    ui.metaStatusCryo.style.color = '#00ff88';
-    ui.btnMetaUnlockCryo.disabled = true;
-    ui.btnMetaUnlockCryo.textContent = 'PURCHASED';
-  } else {
-    ui.metaStatusCryo.textContent = 'LOCKED';
-    ui.metaStatusCryo.style.color = '#ffd000';
-    ui.btnMetaUnlockCryo.disabled = economy.coreShards < 50;
-    ui.btnMetaUnlockCryo.textContent = 'UNLOCK (50 SHARDS)';
-  }
-}
-
-// In-Run Upgrades
-ui.btnDamage.addEventListener('click', () => {
-  if (economy.buyUpgrade('damage')) {
-    audio.playUpgrade();
-    const baseDamage = 15 + economy.meta.baseDamage * 5;
-    turret.damage = Math.round(baseDamage * Math.pow(1.22, economy.upgrades.damage - 1));
-    updateUI();
-  }
-});
-
-ui.btnFirerate.addEventListener('click', () => {
-  if (economy.buyUpgrade('firerate')) {
-    audio.playUpgrade();
-    turret.fireCooldown = Math.max(120, Math.round(450 * Math.pow(0.9, economy.upgrades.firerate - 1)));
-    updateUI();
-  }
-});
-
-ui.btnHealth.addEventListener('click', () => {
-  if (economy.buyUpgrade('health')) {
-    audio.playUpgrade();
-    const oldMax = core.maxHp;
-    const baseHp = 100 + economy.meta.baseHp * 40;
-    core.maxHp = Math.round(baseHp * Math.pow(1.25, economy.upgrades.health - 1));
-    core.heal(core.maxHp - oldMax);
-    updateUI();
-  }
-});
-
-ui.btnYield.addEventListener('click', () => {
-  if (economy.buyUpgrade('yield')) {
-    audio.playUpgrade();
-    updateUI();
-  }
-});
-
-// Meta Upgrades
-ui.btnMetaBaseEnergy.addEventListener('click', () => {
-  if (economy.buyMetaUpgrade('baseEnergy')) {
-    audio.playUpgrade();
-    updateWorkshopUI();
-    updateUI();
-  }
-});
-
-ui.btnMetaBaseHp.addEventListener('click', () => {
-  if (economy.buyMetaUpgrade('baseHp')) {
-    audio.playUpgrade();
-    const hpDiff = 40;
-    core.maxHp += hpDiff;
-    core.heal(hpDiff);
-    updateWorkshopUI();
-    updateUI();
-  }
-});
-
-ui.btnMetaBaseDamage.addEventListener('click', () => {
-  if (economy.buyMetaUpgrade('baseDamage')) {
-    audio.playUpgrade();
-    turret.damage += 5;
-    updateWorkshopUI();
-    updateUI();
-  }
-});
-
-ui.btnMetaUnlockTesla.addEventListener('click', () => {
-  if (economy.buyMetaUpgrade('unlockTesla')) {
-    audio.playUpgrade();
-    if (!teslaCoil) {
-      teslaCoil = new TeslaCoil(logicalWidth / 2, logicalHeight / 2);
-    }
-    updateWorkshopUI();
-    updateUI();
-  }
-});
-
-ui.btnMetaUnlockCryo.addEventListener('click', () => {
-  if (economy.buyMetaUpgrade('unlockCryo')) {
-    audio.playUpgrade();
-    if (!cryoField) {
-      cryoField = new CryoField(logicalWidth / 2, logicalHeight / 2);
-    }
-    updateWorkshopUI();
-    updateUI();
-  }
-});
-
-// Sound Toggle
-ui.audioToggleBtn.addEventListener('click', () => {
-  const isMuted = audio.toggleMute();
-  ui.audioIcon.textContent = isMuted ? '🔇' : '🔊';
-});
-
-// Fullscreen Toggle
-ui.fullscreenBtn.addEventListener('click', () => {
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen().catch(() => {});
-  } else {
-    if (document.exitFullscreen) document.exitFullscreen();
-  }
-});
-
-// Profiler Toggle
-ui.perfToggleBtn.addEventListener('click', () => {
-  showProfiler = !showProfiler;
-  ui.perfOverlay.classList.toggle('hidden', !showProfiler);
-});
-
-// Navigation & Modals
-ui.btnOpenWorkshop.addEventListener('click', () => {
-  isPaused = true;
+function handleGameOver() {
+  gameState.isGameOver = true;
   crazySdk.gameplayStop();
-  updateWorkshopUI();
-  ui.workshopModal.classList.remove('hidden');
-});
+  audio.playCoreBreach();
+  triggerScreenShake(16);
 
-ui.modalWorkshopBtn.addEventListener('click', () => {
-  ui.gameOverModal.classList.add('hidden');
-  updateWorkshopUI();
-  ui.workshopModal.classList.remove('hidden');
-});
+  gameState.currentRunShardsEarned = economy.calculateShardPayout(
+    waveManager.currentWave,
+    gameState.kills,
+    economy.totalEarned
+  );
+  economy.addShards(gameState.currentRunShardsEarned);
 
-ui.closeWorkshopBtn.addEventListener('click', () => {
-  ui.workshopModal.classList.add('hidden');
-  if (isGameOver) {
-    ui.gameOverModal.classList.remove('hidden');
-  } else {
-    isPaused = false;
-    lastTimestamp = performance.now();
-    crazySdk.gameplayStart();
-  }
-});
-
-ui.restartBtn.addEventListener('click', () => {
-  initGame();
-});
-
-// Rewarded Ad 1: Double Core Shards
-ui.btnRewardedDouble.addEventListener('click', () => {
-  if (hasDoubledShards) return;
-
-  crazySdk.requestRewardedAd({
-    adStarted: () => {
-      audio.init();
-    },
-    rewardGiven: () => {
-      hasDoubledShards = true;
-      economy.addShards(currentRunShardsEarned);
-      ui.summaryTotalShards.textContent = economy.coreShards;
-      ui.payoutShards.textContent = `+${currentRunShardsEarned * 2} (DOUBLED!)`;
-      ui.btnRewardedDouble.disabled = true;
-      ui.btnRewardedDouble.textContent = '✓ SHARDS DOUBLED';
-      audio.playUpgrade();
-    }
-  });
-});
-
-// Rewarded Ad 2: Emergency Reboot Revive
-ui.btnRewardedRevive.addEventListener('click', () => {
-  if (hasRevivedThisRun) return;
-
-  crazySdk.requestRewardedAd({
-    adStarted: () => {
-      audio.init();
-    },
-    rewardGiven: () => {
-      hasRevivedThisRun = true;
-      isGameOver = false;
-      core.heal(Math.round(core.maxHp * 0.5));
-
-      // Clear surrounding enemies with a shockwave
-      waveManager.enemies.forEach(e => {
-        e.takeDamage(999);
+  crazySdk.requestMidgameAd({
+    adFinished: () => {
+      gameOverModal.show({
+        shardsEarned: gameState.currentRunShardsEarned,
+        wave: waveManager.currentWave,
+        totalEnergy: economy.totalEarned,
+        kills: gameState.kills,
+        totalShards: economy.coreShards,
+        hasRevived: gameState.hasRevivedThisRun
       });
-      bullets = [];
-
-      ui.gameOverModal.classList.add('hidden');
-      audio.playShockwave();
-      triggerScreenShake(12);
-      crazySdk.gameplayStart();
-      lastTimestamp = performance.now();
     }
   });
-});
 
-// Orbital assistance via Pointer Events
+  gameOverModal.show({
+    shardsEarned: gameState.currentRunShardsEarned,
+    wave: waveManager.currentWave,
+    totalEnergy: economy.totalEarned,
+    kills: gameState.kills,
+    totalShards: economy.coreShards,
+    hasRevived: gameState.hasRevivedThisRun
+  });
+}
+
+// User Strike
 canvas.addEventListener('pointerdown', (e) => {
-  if (isGameOver || isPaused) return;
+  if (gameState.isGameOver || gameState.isPaused) return;
   audio.init();
 
   const rect = canvas.getBoundingClientRect();
@@ -559,69 +351,29 @@ canvas.addEventListener('pointerdown', (e) => {
     x: clickX,
     y: clickY,
     radius: 6,
-    maxRadius: 75,
+    maxRadius: CONFIG.STRIKE.RADIUS,
     alpha: 1
   });
 
-  const strikeDamage = Math.round(turret.damage * 0.9);
+  const strikeDamage = Math.round(turret.damage * CONFIG.STRIKE.DAMAGE_FACTOR);
   waveManager.enemies.forEach((enemy) => {
     const dist = Math.hypot(enemy.x - clickX, enemy.y - clickY);
-    if (dist < 75) {
+    if (dist < CONFIG.STRIKE.RADIUS) {
       enemy.takeDamage(strikeDamage);
       addFloatingText(enemy.x, enemy.y, `-${strikeDamage}`, '#00ffcc', true);
       createExplosion(enemy.x, enemy.y, '#00f3ff', 8);
       const angle = Math.atan2(enemy.y - clickY, enemy.x - clickX);
-      enemy.x += Math.cos(angle) * 24;
-      enemy.y += Math.sin(angle) * 24;
+      enemy.x += Math.cos(angle) * CONFIG.STRIKE.KNOCKBACK;
+      enemy.y += Math.sin(angle) * CONFIG.STRIKE.KNOCKBACK;
     }
   });
 });
 
-function handleGameOver() {
-  isGameOver = true;
-  crazySdk.gameplayStop();
-
-  audio.playCoreBreach();
-  triggerScreenShake(16);
-
-  currentRunShardsEarned = economy.calculateShardPayout(
-    waveManager.currentWave,
-    killsCount,
-    economy.totalEarned
-  );
-  economy.addShards(currentRunShardsEarned);
-
-  ui.payoutShards.textContent = `+${currentRunShardsEarned}`;
-  ui.doubleShardsAmount.textContent = `+${currentRunShardsEarned}`;
-  ui.summaryWaves.textContent = waveManager.currentWave;
-  ui.summaryEnergy.textContent = Math.floor(economy.totalEarned);
-  ui.summaryKills.textContent = killsCount;
-  ui.summaryTotalShards.textContent = economy.coreShards;
-
-  if (hasRevivedThisRun) {
-    ui.btnRewardedRevive.disabled = true;
-    ui.btnRewardedRevive.textContent = 'REVIVE ALREADY USED';
-  }
-
-  // Request midgame interstitial ad with audio suspend
-  crazySdk.requestMidgameAd({
-    adStarted: () => {
-      // Audio is paused automatically by SDK or mute
-    },
-    adFinished: () => {
-      ui.gameOverModal.classList.remove('hidden');
-    }
-  });
-
-  ui.gameOverModal.classList.remove('hidden');
-}
-
-// Background Visual Grid and Extraction Veins
 function drawBackgroundGridAndVeins(ctx, width, height, dt, energyRate) {
   veinPulseTime += dt * (1.2 + energyRate * 0.08);
 
   ctx.save();
-  const gridSize = 45;
+  const gridSize = CONFIG.CANVAS.GRID_SIZE;
   ctx.strokeStyle = 'rgba(26, 34, 62, 0.45)';
   ctx.lineWidth = 1;
 
@@ -671,50 +423,18 @@ function drawBackgroundGridAndVeins(ctx, width, height, dt, energyRate) {
   ctx.restore();
 }
 
-// Main Game Loop
-function gameLoop(timestamp) {
-  const frameStart = performance.now();
-  const dt = Math.min((timestamp - lastTimestamp) / 1000, 0.1);
-  lastTimestamp = timestamp;
+// Tick & Render Pipeline
+function update(dt, timestamp) {
+  gameState.updateShake();
 
-  // Profiler FPS counter
-  frameCount++;
-  if (timestamp - lastFpsUpdate >= 500) {
-    if (showProfiler) {
-      const currentFps = Math.round((frameCount * 1000) / (timestamp - lastFpsUpdate));
-      const totalEntities = (waveManager ? waveManager.enemies.length : 0) + bullets.length + particles.length;
-      ui.perfFps.textContent = currentFps;
-      ui.perfEntities.textContent = totalEntities;
-    }
-    frameCount = 0;
-    lastFpsUpdate = timestamp;
-  }
-
-  // Screen Shake
-  if (screenShake.intensity > 0.1) {
-    screenShake.offsetX = (Math.random() - 0.5) * screenShake.intensity;
-    screenShake.offsetY = (Math.random() - 0.5) * screenShake.intensity;
-    screenShake.intensity *= screenShake.decay;
-  } else {
-    screenShake.offsetX = 0;
-    screenShake.offsetY = 0;
-    screenShake.intensity = 0;
-  }
-
-  if (!isGameOver && !isPaused) {
+  if (!gameState.isGameOver && !gameState.isPaused) {
     economy.update(dt);
     core.update(dt);
 
-    if (cryoField) {
-      cryoField.update(dt, waveManager.enemies);
-    }
-
+    if (cryoField) cryoField.update(dt, waveManager.enemies);
     waveManager.update(dt, logicalWidth, logicalHeight, core);
     turret.update(dt, waveManager.enemies, bullets);
-
-    if (teslaCoil) {
-      teslaCoil.update(dt, waveManager.enemies);
-    }
+    if (teslaCoil) teslaCoil.update(dt, waveManager.enemies);
 
     // Bullets
     for (let i = bullets.length - 1; i >= 0; i--) {
@@ -740,7 +460,7 @@ function gameLoop(timestamp) {
       }
     }
 
-    // Enemy Collisions & Eliminations
+    // Enemies
     for (let i = waveManager.enemies.length - 1; i >= 0; i--) {
       const enemy = waveManager.enemies[i];
       const distToCore = Math.hypot(enemy.x - core.x, enemy.y - core.y);
@@ -764,7 +484,7 @@ function gameLoop(timestamp) {
       if (enemy.isDead()) {
         const isBrute = enemy.type === 'brute';
         economy.addEnergy(enemy.reward);
-        killsCount++;
+        gameState.kills++;
         audio.playExplosion(isBrute);
         if (isBrute) triggerScreenShake(6);
         addFloatingText(enemy.x, enemy.y - 12, `+${enemy.reward}E`, '#ffd000', isBrute);
@@ -773,28 +493,25 @@ function gameLoop(timestamp) {
       }
     }
 
-    updateUI();
+    syncAllUI();
   }
+}
 
-  // --- RENDERING WITH HIGH-DPI & CAMERA SHAKE ---
+function render(dt, timestamp) {
+  const frameStart = performance.now();
+
   ctx.save();
   ctx.scale(dpr, dpr);
-  ctx.translate(screenShake.offsetX, screenShake.offsetY);
+  ctx.translate(gameState.screenShake.offsetX, gameState.screenShake.offsetY);
   ctx.clearRect(-20, -20, logicalWidth + 40, logicalHeight + 40);
 
   drawBackgroundGridAndVeins(ctx, logicalWidth, logicalHeight, dt, economy.getEnergyRate());
 
-  if (cryoField) {
-    cryoField.draw(ctx);
-  }
-
+  if (cryoField) cryoField.draw(ctx);
   turret.drawRange(ctx);
   core.draw(ctx);
   turret.draw(ctx);
-
-  if (teslaCoil) {
-    teslaCoil.draw(ctx);
-  }
+  if (teslaCoil) teslaCoil.draw(ctx);
 
   // Shockwaves
   for (let i = shockwaves.length - 1; i >= 0; i--) {
@@ -862,13 +579,10 @@ function gameLoop(timestamp) {
 
   ctx.restore();
 
-  if (showProfiler) {
-    const renderTime = (performance.now() - frameStart).toFixed(2);
-    ui.perfMs.textContent = renderTime;
-  }
-
-  animationFrameId = requestAnimationFrame(gameLoop);
+  const totalEntities = (waveManager ? waveManager.enemies.length : 0) + bullets.length + particles.length;
+  profiler.update(timestamp, totalEntities, performance.now() - frameStart);
 }
 
-// Start
+const loop = new GameLoop(update, render);
+
 initGame();
