@@ -10,22 +10,22 @@ export class TopHud {
   render() {
     this.container.innerHTML = `
       <div class="hud-box">
-        <span class="hud-label">ENERGY:</span>
-        <span id="dark-energy" class="hud-val neon-cyan">0</span>
+        <span class="hud-label">REDSTONE:</span>
+        <span id="dark-energy" class="hud-val ore-redstone">0</span>
         <span class="hud-sub">(+<span id="energy-rate">5</span>/s)</span>
       </div>
       <div class="hud-box">
         <span class="hud-label">WAVE:</span>
-        <span id="wave-counter" class="hud-val neon-magenta">1</span>
+        <span id="wave-counter" class="hud-val ore-gold">1</span>
         <span class="hud-sub" id="wave-progress">Wave in progress</span>
       </div>
       <div class="hud-box">
-        <span class="hud-label">SHARDS:</span>
-        <span id="hud-shards" class="hud-val neon-yellow">0</span>
+        <span class="hud-label">EMERALDS:</span>
+        <span id="hud-shards" class="hud-val ore-emerald">0</span>
       </div>
       <div class="hud-box">
-        <span class="hud-label">CORE INTEGRITY:</span>
-        <span id="core-hp-text" class="hud-val neon-green">100 / 100</span>
+        <span class="hud-label">BEACON INTEGRITY:</span>
+        <span id="core-hp-text" class="hud-val ore-diamond">100 / 100</span>
       </div>
       <div class="hud-controls">
         <button id="perf-toggle-btn" class="icon-hud-btn" title="Toggle Profiler (FPS)">⚡</button>
@@ -75,9 +75,9 @@ export class TopHud {
     this.coreHpEl.textContent = `${Math.max(0, Math.ceil(currentHp))} / ${maxHp}`;
 
     if (waveIntermission) {
-      this.waveProgressEl.textContent = `Next wave in ${Math.max(0, intermissionTime).toFixed(1)}s`;
+      this.waveProgressEl.textContent = `Next raid in ${Math.max(0, intermissionTime).toFixed(1)}s`;
     } else {
-      this.waveProgressEl.textContent = `Enemies: ${remainingEnemies}`;
+      this.waveProgressEl.textContent = `Hostiles: ${remainingEnemies}`;
     }
   }
 }
