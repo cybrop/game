@@ -58,6 +58,18 @@ export class UpgradeSidebar {
             UPGRADE (<span id="cost-yield">30</span> R)
           </button>
         </div>
+
+        <!-- Deployable Golem Guard -->
+        <div class="upgrade-card" id="card-golem">
+          <div class="upgrade-info">
+            <span class="upgrade-name">Iron Golem Patrol</span>
+            <span class="upgrade-level">Units: <span id="lvl-golem">0</span></span>
+          </div>
+          <div class="upgrade-effect">Patrols & delivers knockback punches</div>
+          <button class="upgrade-btn" id="btn-upgrade-golem">
+            RECRUIT (<span id="cost-golem">60</span> R)
+          </button>
+        </div>
       </div>
 
       <div class="sidebar-footer">
@@ -103,6 +115,10 @@ export class UpgradeSidebar {
     this.costYield = document.getElementById('cost-yield');
     this.btnYield = document.getElementById('btn-upgrade-yield');
 
+    this.lvlGolem = document.getElementById('lvl-golem');
+    this.costGolem = document.getElementById('cost-golem');
+    this.btnGolem = document.getElementById('btn-upgrade-golem');
+
     this.statTesla = document.getElementById('stat-tesla');
     this.statCryo = document.getElementById('stat-cryo');
     this.statRange = document.getElementById('stat-range');
@@ -115,6 +131,7 @@ export class UpgradeSidebar {
     this.btnFirerate.addEventListener('click', () => this.options.onBuyUpgrade?.('firerate'));
     this.btnHealth.addEventListener('click', () => this.options.onBuyUpgrade?.('health'));
     this.btnYield.addEventListener('click', () => this.options.onBuyUpgrade?.('yield'));
+    this.btnGolem.addEventListener('click', () => this.options.onBuyUpgrade?.('golem'));
     this.btnOpenWorkshop.addEventListener('click', () => this.options.onOpenWorkshop?.());
   }
 
@@ -142,6 +159,11 @@ export class UpgradeSidebar {
     this.valYield.textContent = economy.getEnergyRate().toFixed(1);
     this.costYield.textContent = yldCost;
     this.btnYield.disabled = economy.energy < yldCost;
+
+    const golemCost = economy.getUpgradeCost('golem');
+    this.lvlGolem.textContent = economy.upgrades.golem;
+    this.costGolem.textContent = golemCost;
+    this.btnGolem.disabled = economy.energy < golemCost;
 
     this.statTesla.textContent = economy.meta.unlockTesla ? 'Active' : 'Locked';
     this.statTesla.style.color = economy.meta.unlockTesla ? 'var(--emerald-glow)' : 'var(--text-muted)';
