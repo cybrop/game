@@ -1,12 +1,7 @@
 import { Isometric } from './Isometric.js';
-import { CONFIG } from '../config.js';
 
 /**
- * Multi-pass 2.5D Isometric Render Pipeline:
- * Pass 1: Isometric ground floor, energy excavation pit, and animated conduits
- * Pass 2: Projected ground contact shadows (z = 0 plane)
- * Pass 3: Painter's Algorithm Depth-Sorted World Entities
- * Pass 4: Foreground VFX (Shockwaves, Projectile Beams, Floating Combat Text)
+ * Multi-pass 2.5D Isometric Render Pipeline
  */
 export class Renderer {
   constructor(canvas, ctx) {
@@ -34,35 +29,26 @@ export class Renderer {
   }) {
     const ctx = this.ctx;
     const originX = logicalWidth / 2;
-    const originY = logicalHeight / 2 + 30; // Slight downward offset for elevated isometric view
+    const originY = logicalHeight / 2 + 30;
 
     ctx.save();
     ctx.scale(dpr, dpr);
     ctx.translate(shake.offsetX, shake.offsetY);
     ctx.clearRect(-40, -40, logicalWidth + 80, logicalHeight + 80);
 
-    // ==========================================
-    // PASS 1: Isometric Ground Grid & Extraction Veins
-    // ==========================================
+    // Pass 1: Isometric Floor & Conduits
     this.renderGroundGrid(ctx, originX, originY);
     this.renderExtractionVeins(ctx, originX, originY, dt, energyRate);
 
-    // ==========================================
-    // PASS 2: Cryo Field & Contact Shadows
-    // ==========================================
+    // Pass 2: Field Auras
     if (cryoField) {
       this.renderCryoField(ctx, cryoField, originX, originY);
     }
-    this.renderGroundShadows(ctx, originX, originY, core, waveManager.enemies, bullets);
 
-    // ==========================================
-    // PASS 3: Painter's Algorithm Depth-Sorted Entities
-    // ==========================================
+    // Pass 3: Depth-Sorted 2.5D Entities & 3D Projectiles
     this.renderDepthSortedEntities(ctx, originX, originY, core, turret, teslaCoil, waveManager.enemies, bullets);
 
-    // ==========================================
-    // PASS 4: Foreground VFX, Shockwaves, Particles, Text
-    // ==========================================
+    // Pass 4: Foreground VFX & Text
     this.renderForegroundVFX(ctx, shockwaves, particles, floatingTexts);
 
     ctx.restore();
@@ -76,7 +62,6 @@ export class Renderer {
     ctx.strokeStyle = 'rgba(26, 36, 70, 0.45)';
     ctx.lineWidth = 1;
 
-    // Longitudinal grid lines
     for (let x = -worldRadius; x <= worldRadius; x += step) {
       const pStart = Isometric.worldToScreen(x, -worldRadius, 0, originX, originY);
       const pEnd = Isometric.worldToScreen(x, worldRadius, 0, originX, originY);
@@ -86,7 +71,6 @@ export class Renderer {
       ctx.stroke();
     }
 
-    // Transverse grid lines
     for (let y = -worldRadius; y <= worldRadius; y += step) {
       const pStart = Isometric.worldToScreen(-worldRadius, y, 0, originX, originY);
       const pEnd = Isometric.worldToScreen(worldRadius, y, 0, originX, originY);
@@ -96,7 +80,7 @@ export class Renderer {
       ctx.stroke();
     }
 
-    // Center subterranean excavation foundation rim
+    // Excavation foundation rim
     const centerScreen = Isometric.worldToScreen(0, 0, 0, originX, originY);
     ctx.beginPath();
     ctx.ellipse(centerScreen.x, centerScreen.y, 68, 34, 0, 0, Math.PI * 2);
@@ -123,7 +107,6 @@ export class Renderer {
       const pStart = Isometric.worldToScreen(startWorldX, startWorldY, 0, originX, originY);
       const pEnd = Isometric.worldToScreen(0, 0, 0, originX, originY);
 
-      // Vein channel
       ctx.beginPath();
       ctx.moveTo(pStart.x, pStart.y);
       ctx.lineTo(pEnd.x, pEnd.y);
@@ -131,7 +114,6 @@ export class Renderer {
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Energy pulse packet traveling into center core
       const packetOffset = (this.veinPulseTime * 0.22 + i / veinCount) % 1;
       const currentWorldX = startWorldX * (1 - packetOffset);
       const currentWorldY = startWorldY * (1 - packetOffset);
@@ -168,41 +150,10 @@ export class Renderer {
     ctx.restore();
   }
 
-  renderGroundShadows(ctx, originX, originY, core, enemies, bullets) {
-    ctx.save();
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
-
-    // Core base shadow
-    const corePos = Isometric.worldToScreen(core.x, core.y, 0, originX, originY);
-    ctx.beginPath();
-    ctx.ellipse(corePos.x, corePos.y + 12, 42, 21, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Enemy ground shadows
-    enemies.forEach((enemy) => {
-      const ePos = Isometric.worldToScreen(enemy.x, enemy.y, 0, originX, originY);
-      const shadowW = enemy.radius * 1.3;
-      const shadowH = shadowW * 0.5;
-      ctx.beginPath();
-      ctx.ellipse(ePos.x, ePos.y + 6, shadowW, shadowH, 0, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    // Bullet contact ground shadows
-    bullets.forEach((bullet) => {
-      const bPos = Isometric.worldToScreen(bullet.x, bullet.y, 0, originX, originY);
-      ctx.beginPath();
-      ctx.ellipse(bPos.x, bPos.y + 10, 5, 2.5, 0, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    ctx.restore();
-  }
-
   renderDepthSortedEntities(ctx, originX, originY, core, turret, teslaCoil, enemies, bullets) {
     const renderList = [];
 
-    // Core & Turret Base
+    // Core & Elevated Turret Base
     renderList.push({
       depth: core.x + core.y,
       render: () => {
@@ -213,7 +164,7 @@ export class Renderer {
       }
     });
 
-    // Enemies
+    // Enemies (draws ground shadow + 2.5D geometry)
     enemies.forEach((enemy) => {
       renderList.push({
         depth: enemy.x + enemy.y,
@@ -221,15 +172,15 @@ export class Renderer {
       });
     });
 
-    // Bullets
+    // Bullets (draws floor shadow + elevated projectile)
     bullets.forEach((bullet) => {
       renderList.push({
-        depth: bullet.x + bullet.y,
+        depth: bullet.x + bullet.y + (bullet.z * 0.05),
         render: () => bullet.draw(ctx, originX, originY)
       });
     });
 
-    // Sort by isometric depth: lowest depth draws first, highest on top
+    // Sort along isometric depth axis (Painter's algorithm)
     renderList.sort((a, b) => a.depth - b.depth);
 
     for (let i = 0; i < renderList.length; i++) {
@@ -238,7 +189,7 @@ export class Renderer {
   }
 
   renderForegroundVFX(ctx, shockwaves, particles, floatingTexts) {
-    // 2.5D Shockwaves
+    // Shockwaves
     for (let i = shockwaves.length - 1; i >= 0; i--) {
       const sw = shockwaves[i];
       sw.radius += (sw.maxRadius - sw.radius) * 0.22;
