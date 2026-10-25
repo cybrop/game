@@ -42,13 +42,17 @@ let waveManager;
 let bullets = [];
 let floatingTexts = [];
 
-const MAX_FLOATING_TEXTS = 40;
+// Throttled UI timer to completely eliminate DOM reflow lag
+let uiSyncTimer = 0;
+const UI_SYNC_INTERVAL = 0.1; // 10 updates per second instead of 60fps
+
+const MAX_FLOATING_TEXTS = 30;
 
 function resizeCanvas() {
   const container = document.getElementById('canvas-container');
   if (!container) return;
 
-  dpr = window.devicePixelRatio || 1;
+  dpr = Math.min(window.devicePixelRatio || 1, 2); // Cap at 2x to save GPU
   logicalWidth = container.clientWidth;
   logicalHeight = container.clientHeight;
 
@@ -114,7 +118,7 @@ export function addFloatingText(x, y, text, color = '#ffffff', isCritical = fals
     alpha: 1,
     size: isCritical ? 16 : 13,
     vy: isCritical ? -40 : -28,
-    life: isCritical ? 1.0 : 0.75
+    life: isCritical ? 0.9 : 0.65
   });
 }
 
@@ -277,8 +281,8 @@ function initGame() {
 
   waveManager = new WaveManager();
 
-  bullets = [];
-  floatingTexts = [];
+  bullets.length = 0;
+  floatingTexts.length = 0;
 
   gameOverModal.hide();
   workshopModal.hide();
@@ -386,20 +390,20 @@ function update(dt, timestamp) {
     turret.update(dt, waveManager.enemies, bullets);
     if (teslaCoil) teslaCoil.update(dt, waveManager.enemies);
 
-    // Fast squared-distance 3D projectile collision checks
-    const eLen = waveManager.enemies.length;
+    // Update 3D Arrow Projectiles
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
       b.update(dt);
 
       let hit = false;
-      for (let j = 0; j < eLen; j++) {
+      const bRad = b.radius;
+      for (let j = 0; j < waveManager.enemies.length; j++) {
         const enemy = waveManager.enemies[j];
         const dx = b.x - enemy.x;
         const dy = b.y - enemy.y;
-        const rSum = b.radius + enemy.radius;
+        const rSum = bRad + enemy.radius;
 
-        if (dx * dx + dy * dy < rSum * rSum && b.z <= enemy.height + 8 && b.z >= 0) {
+        if (dx * dx + dy * dy < rSum * rSum && b.z <= enemy.height + 10 && b.z >= 0) {
           enemy.takeDamage(b.damage);
           audio.playMobDamage(enemy.type === 'brute');
 
@@ -415,11 +419,15 @@ function update(dt, timestamp) {
         if (!hit && b.z <= 0) {
           audio.playImpact();
         }
-        bullets.splice(i, 1);
+        // Fast swap-and-pop removal
+        const lastBullet = bullets.pop();
+        if (i < bullets.length) {
+          bullets[i] = lastBullet;
+        }
       }
     }
 
-    // Fast squared-distance Core collisions & enemy death processing
+    // Enemies
     const coreR = core.radius;
     for (let i = waveManager.enemies.length - 1; i >= 0; i--) {
       const enemy = waveManager.enemies[i];
@@ -436,7 +444,12 @@ function update(dt, timestamp) {
         particleSystem.emitExplosion(enemy.x, enemy.y, enemy.height, '#707070', 20, isBrute);
         particleSystem.emitShockwave(core.x, core.y, 40, '#d61c1c');
         addFloatingText(coreScreen.x, coreScreen.y - 15, `-${enemy.damage} HP`, '#ff3838', true);
-        waveManager.enemies.splice(i, 1);
+        
+        // Remove enemy with swap and pop
+        const lastEnemy = waveManager.enemies.pop();
+        if (i < waveManager.enemies.length) {
+          waveManager.enemies[i] = lastEnemy;
+        }
 
         if (core.isDestroyed()) {
           handleGameOver();
@@ -455,11 +468,20 @@ function update(dt, timestamp) {
         const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, enemy.height, originX, originY);
         addFloatingText(enemyScreen.x, enemyScreen.y - 10, `+${enemy.reward} R`, '#d61c1c', isBrute);
         particleSystem.emitExplosion(enemy.x, enemy.y, enemy.height, enemy.accentColor, 16, isBrute);
-        waveManager.enemies.splice(i, 1);
+
+        const lastEnemy = waveManager.enemies.pop();
+        if (i < waveManager.enemies.length) {
+          waveManager.enemies[i] = lastEnemy;
+        }
       }
     }
 
-    syncAllUI();
+    // Throttled UI update (10 updates per second) prevents main thread freezing
+    uiSyncTimer += dt;
+    if (uiSyncTimer >= UI_SYNC_INTERVAL) {
+      uiSyncTimer = 0;
+      syncAllUI();
+    }
   }
 }
 
