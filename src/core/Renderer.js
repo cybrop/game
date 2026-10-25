@@ -23,9 +23,8 @@ export class Renderer {
     cryoField,
     waveManager,
     bullets,
-    particles,
-    floatingTexts,
-    shockwaves
+    particleSystem,
+    floatingTexts
   }) {
     const ctx = this.ctx;
     const originX = logicalWidth / 2;
@@ -36,20 +35,34 @@ export class Renderer {
     ctx.translate(shake.offsetX, shake.offsetY);
     ctx.clearRect(-40, -40, logicalWidth + 80, logicalHeight + 80);
 
+    // ==========================================
     // Pass 1: Isometric Floor & Conduits
+    // ==========================================
     this.renderGroundGrid(ctx, originX, originY);
     this.renderExtractionVeins(ctx, originX, originY, dt, energyRate);
 
-    // Pass 2: Field Auras
+    // ==========================================
+    // Pass 2: Field Auras & Ground-Level FX
+    // ==========================================
     if (cryoField) {
       this.renderCryoField(ctx, cryoField, originX, originY);
     }
+    if (particleSystem) {
+      particleSystem.drawGroundFX(ctx, originX, originY);
+    }
 
+    // ==========================================
     // Pass 3: Depth-Sorted 2.5D Entities & 3D Projectiles
+    // ==========================================
     this.renderDepthSortedEntities(ctx, originX, originY, core, turret, teslaCoil, waveManager.enemies, bullets);
 
-    // Pass 4: Foreground VFX & Text
-    this.renderForegroundVFX(ctx, shockwaves, particles, floatingTexts);
+    // ==========================================
+    // Pass 4: Airborne 3D Particles, Sparks, & Combat Text
+    // ==========================================
+    if (particleSystem) {
+      particleSystem.drawAirborneParticles(ctx, originX, originY);
+    }
+    this.renderFloatingText(ctx, floatingTexts);
 
     ctx.restore();
   }
@@ -164,7 +177,7 @@ export class Renderer {
       }
     });
 
-    // Enemies (draws ground shadow + 2.5D geometry)
+    // Enemies
     enemies.forEach((enemy) => {
       renderList.push({
         depth: enemy.x + enemy.y,
@@ -172,7 +185,7 @@ export class Renderer {
       });
     });
 
-    // Bullets (draws floor shadow + elevated projectile)
+    // Bullets
     bullets.forEach((bullet) => {
       renderList.push({
         depth: bullet.x + bullet.y + (bullet.z * 0.05),
@@ -180,7 +193,6 @@ export class Renderer {
       });
     });
 
-    // Sort along isometric depth axis (Painter's algorithm)
     renderList.sort((a, b) => a.depth - b.depth);
 
     for (let i = 0; i < renderList.length; i++) {
@@ -188,50 +200,7 @@ export class Renderer {
     }
   }
 
-  renderForegroundVFX(ctx, shockwaves, particles, floatingTexts) {
-    // Shockwaves
-    for (let i = shockwaves.length - 1; i >= 0; i--) {
-      const sw = shockwaves[i];
-      sw.radius += (sw.maxRadius - sw.radius) * 0.22;
-      sw.alpha -= 0.055;
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.ellipse(sw.x, sw.y, sw.radius * 1.5, sw.radius * 0.75, 0, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(0, 243, 255, ${Math.max(0, sw.alpha)})`;
-      ctx.lineWidth = 3.5;
-      ctx.shadowColor = '#00f3ff';
-      ctx.shadowBlur = 10;
-      ctx.stroke();
-      ctx.restore();
-
-      if (sw.alpha <= 0) shockwaves.splice(i, 1);
-    }
-
-    // Explosion particles
-    for (let i = particles.length - 1; i >= 0; i--) {
-      const p = particles[i];
-      p.x += p.vx;
-      p.y += p.vy;
-      p.alpha -= p.decay;
-
-      if (p.alpha <= 0) {
-        particles.splice(i, 1);
-        continue;
-      }
-
-      ctx.save();
-      ctx.globalAlpha = Math.max(0, p.alpha);
-      ctx.fillStyle = p.color;
-      ctx.shadowColor = p.color;
-      ctx.shadowBlur = 6;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // Floating combat numbers
+  renderFloatingText(ctx, floatingTexts) {
     for (let i = floatingTexts.length - 1; i >= 0; i--) {
       const ft = floatingTexts[i];
       ft.y += ft.vy * 0.016;
