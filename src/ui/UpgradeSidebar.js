@@ -10,74 +10,74 @@ export class UpgradeSidebar {
   render() {
     this.container.innerHTML = `
       <div class="sidebar-header">
-        <h2>IN-RUN UPGRADES</h2>
-        <p class="sidebar-sub">Enhance current run defenses</p>
+        <h2>DEFENSE UPGRADES</h2>
+        <p class="sidebar-sub">Fortify beacon against monster horde</p>
       </div>
 
       <div class="upgrade-list">
         <div class="upgrade-card" id="card-damage">
           <div class="upgrade-info">
-            <span class="upgrade-name">Turret Damage</span>
+            <span class="upgrade-name">Dispenser Arrow DMG</span>
             <span class="upgrade-level">Lv <span id="lvl-damage">1</span></span>
           </div>
           <div class="upgrade-effect">Damage: <span id="val-damage">15</span></div>
           <button class="upgrade-btn" id="btn-upgrade-damage">
-            UPGRADE (<span id="cost-damage">25</span>)
+            UPGRADE (<span id="cost-damage">25</span> R)
           </button>
         </div>
 
         <div class="upgrade-card" id="card-firerate">
           <div class="upgrade-info">
-            <span class="upgrade-name">Firing Rate</span>
+            <span class="upgrade-name">Repeater Clock (Rate)</span>
             <span class="upgrade-level">Lv <span id="lvl-firerate">1</span></span>
           </div>
           <div class="upgrade-effect">Cooldown: <span id="val-firerate">0.45</span>s</div>
           <button class="upgrade-btn" id="btn-upgrade-firerate">
-            UPGRADE (<span id="cost-firerate">35</span>)
+            UPGRADE (<span id="cost-firerate">35</span> R)
           </button>
         </div>
 
         <div class="upgrade-card" id="card-health">
           <div class="upgrade-info">
-            <span class="upgrade-name">Reinforced Core</span>
+            <span class="upgrade-name">Obsidian Reinforced HP</span>
             <span class="upgrade-level">Lv <span id="lvl-health">1</span></span>
           </div>
           <div class="upgrade-effect">Max HP: <span id="val-health">100</span></div>
           <button class="upgrade-btn" id="btn-upgrade-health">
-            UPGRADE (<span id="cost-health">40</span>)
+            UPGRADE (<span id="cost-health">40</span> R)
           </button>
         </div>
 
         <div class="upgrade-card" id="card-yield">
           <div class="upgrade-info">
-            <span class="upgrade-name">Extractor Yield</span>
+            <span class="upgrade-name">Redstone Quarry Yield</span>
             <span class="upgrade-level">Lv <span id="lvl-yield">1</span></span>
           </div>
           <div class="upgrade-effect">Yield: +<span id="val-yield">5</span>/s</div>
           <button class="upgrade-btn" id="btn-upgrade-yield">
-            UPGRADE (<span id="cost-yield">30</span>)
+            UPGRADE (<span id="cost-yield">30</span> R)
           </button>
         </div>
       </div>
 
       <div class="sidebar-footer">
         <div class="stat-row">
-          <span>Tesla Coil:</span>
-          <span id="stat-tesla" class="neon-cyan">Locked</span>
+          <span>Lightning Rod:</span>
+          <span id="stat-tesla" class="ore-diamond">Locked</span>
         </div>
         <div class="stat-row">
-          <span>Cryo Field:</span>
-          <span id="stat-cryo" class="neon-cyan">Locked</span>
+          <span>Soul Frost Brazier:</span>
+          <span id="stat-cryo" class="ore-diamond">Locked</span>
         </div>
         <div class="stat-row">
-          <span>Turret Range:</span>
+          <span>Dispenser Range:</span>
           <span id="stat-range">240px</span>
         </div>
         <div class="stat-row">
-          <span>Enemies Defeated:</span>
+          <span>Monsters Defeated:</span>
           <span id="stat-kills">0</span>
         </div>
-        <button id="btn-open-workshop" class="secondary-btn">OPEN WORKSHOP</button>
+        <button id="btn-open-workshop" class="secondary-btn">OPEN ANVIL WORKSHOP</button>
       </div>
     `;
   }
@@ -119,40 +119,35 @@ export class UpgradeSidebar {
   }
 
   update({ economy, turret, core, kills }) {
-    // Damage
     const dmgCost = economy.getUpgradeCost('damage');
     this.lvlDamage.textContent = economy.upgrades.damage;
     this.valDamage.textContent = turret.damage;
     this.costDamage.textContent = dmgCost;
     this.btnDamage.disabled = economy.energy < dmgCost;
 
-    // Fire rate
     const frCost = economy.getUpgradeCost('firerate');
     this.lvlFirerate.textContent = economy.upgrades.firerate;
     this.valFirerate.textContent = (turret.fireCooldown / 1000).toFixed(2);
     this.costFirerate.textContent = frCost;
     this.btnFirerate.disabled = economy.energy < frCost;
 
-    // Health
     const hpCost = economy.getUpgradeCost('health');
     this.lvlHealth.textContent = economy.upgrades.health;
     this.valHealth.textContent = core.maxHp;
     this.costHealth.textContent = hpCost;
     this.btnHealth.disabled = economy.energy < hpCost;
 
-    // Yield
     const yldCost = economy.getUpgradeCost('yield');
     this.lvlYield.textContent = economy.upgrades.yield;
     this.valYield.textContent = economy.getEnergyRate().toFixed(1);
     this.costYield.textContent = yldCost;
     this.btnYield.disabled = economy.energy < yldCost;
 
-    // Footer stats
     this.statTesla.textContent = economy.meta.unlockTesla ? 'Active' : 'Locked';
-    this.statTesla.style.color = economy.meta.unlockTesla ? '#00ff88' : '#7482a5';
+    this.statTesla.style.color = economy.meta.unlockTesla ? 'var(--emerald-glow)' : 'var(--text-muted)';
 
     this.statCryo.textContent = economy.meta.unlockCryo ? 'Active' : 'Locked';
-    this.statCryo.style.color = economy.meta.unlockCryo ? '#00f3ff' : '#7482a5';
+    this.statCryo.style.color = economy.meta.unlockCryo ? 'var(--diamond-base)' : 'var(--text-muted)';
 
     this.statRange.textContent = `${turret.range}px`;
     this.statKills.textContent = kills;
