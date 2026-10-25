@@ -1,13 +1,14 @@
+import { Isometric } from '../core/Isometric.js';
 import { addFloatingText, createExplosion, audio, triggerScreenShake } from '../main.js';
 
 export class TeslaCoil {
-  constructor(x, y) {
+  constructor(x = 0, y = 0) {
     this.x = x;
     this.y = y;
     this.range = 200;
     this.damage = 18;
     this.maxChains = 3;
-    this.cooldown = 1.3; // seconds
+    this.cooldown = 1.3;
     this.timer = 0;
     this.activeArcs = [];
   }
@@ -15,7 +16,6 @@ export class TeslaCoil {
   update(dt, enemies) {
     this.timer += dt;
 
-    // Decay visual arcs
     for (let i = this.activeArcs.length - 1; i >= 0; i--) {
       this.activeArcs[i].alpha -= dt * 3.5;
       if (this.activeArcs[i].alpha <= 0) {
@@ -51,16 +51,16 @@ export class TeslaCoil {
     this.activeArcs.push({
       x1: this.x,
       y1: this.y,
+      z1: 22,
       x2: currentTarget.x,
       y2: currentTarget.y,
+      z2: 12,
       alpha: 1
     });
 
     currentTarget.takeDamage(this.damage);
-    addFloatingText(currentTarget.x, currentTarget.y, `-${this.damage}`, '#00ffea', true);
-    createExplosion(currentTarget.x, currentTarget.y, '#00ffea', 6);
 
-    // Chain to nearby enemies
+    // Chain jumps
     let prev = currentTarget;
     for (let chain = 1; chain < this.maxChains; chain++) {
       let nextTarget = null;
@@ -80,15 +80,15 @@ export class TeslaCoil {
         this.activeArcs.push({
           x1: prev.x,
           y1: prev.y,
+          z1: 12,
           x2: nextTarget.x,
           y2: nextTarget.y,
+          z2: 12,
           alpha: 1
         });
 
         const chainDamage = Math.round(this.damage * 0.75);
         nextTarget.takeDamage(chainDamage);
-        addFloatingText(nextTarget.x, nextTarget.y, `-${chainDamage}`, '#00ffea');
-        createExplosion(nextTarget.x, nextTarget.y, '#00ffea', 5);
         prev = nextTarget;
       } else {
         break;
@@ -98,8 +98,12 @@ export class TeslaCoil {
     return true;
   }
 
-  draw(ctx) {
+  draw(ctx, originX = 0, originY = 0) {
+    // 2.5D Lightning Arcs
     for (const arc of this.activeArcs) {
+      const p1 = Isometric.worldToScreen(arc.x1, arc.y1, arc.z1, originX, originY);
+      const p2 = Isometric.worldToScreen(arc.x2, arc.y2, arc.z2, originX, originY);
+
       ctx.save();
       ctx.strokeStyle = `rgba(0, 255, 234, ${Math.max(0, arc.alpha)})`;
       ctx.shadowColor = '#00ffea';
@@ -107,21 +111,21 @@ export class TeslaCoil {
       ctx.lineWidth = 2.5;
 
       ctx.beginPath();
-      ctx.moveTo(arc.x1, arc.y1);
+      ctx.moveTo(p1.x, p1.y);
 
-      const midX = (arc.x1 + arc.x2) / 2 + (Math.random() - 0.5) * 22;
-      const midY = (arc.y1 + arc.y2) / 2 + (Math.random() - 0.5) * 22;
+      const midX = (p1.x + p2.x) / 2 + (Math.random() - 0.5) * 22;
+      const midY = (p1.y + p2.y) / 2 + (Math.random() - 0.5) * 22;
       ctx.lineTo(midX, midY);
-      ctx.lineTo(arc.x2, arc.y2);
+      ctx.lineTo(p2.x, p2.y);
       ctx.stroke();
       ctx.restore();
     }
 
-    // Tesla core node
+    // Tesla Pylon Ring Node
+    const pylon = Isometric.worldToScreen(this.x, this.y, 18, originX, originY);
     ctx.save();
-    ctx.translate(this.x, this.y);
     ctx.beginPath();
-    ctx.arc(0, 0, 16, 0, Math.PI * 2);
+    ctx.ellipse(pylon.x, pylon.y, 14, 7, 0, 0, Math.PI * 2);
     ctx.strokeStyle = 'rgba(0, 255, 234, 0.45)';
     ctx.lineWidth = 2;
     ctx.stroke();
