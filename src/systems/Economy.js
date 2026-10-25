@@ -2,10 +2,9 @@ import { StorageManager } from './Storage.js';
 
 export class Economy {
   constructor() {
-    this.energy = 50; // Starting run seed currency
+    this.energy = 50;
     this.totalEarned = 50;
 
-    // Load persistent meta state
     const saved = StorageManager.load() || {};
     this.coreShards = saved.coreShards || 0;
     this.meta = {
@@ -13,29 +12,36 @@ export class Economy {
       baseHp: saved.meta?.baseHp || 0,
       baseDamage: saved.meta?.baseDamage || 0,
       unlockTesla: saved.meta?.unlockTesla || false,
-      unlockCryo: saved.meta?.unlockCryo || false
+      unlockCryo: saved.meta?.unlockCryo || false,
+      // Enchanted Book Workshop
+      multishot: saved.meta?.multishot || false,
+      flame: saved.meta?.flame || false,
+      thorns: saved.meta?.thorns || false,
+      fortune: saved.meta?.fortune || false
     };
 
-    // In-Run upgrades
     this.upgrades = {
       damage: 1,
       firerate: 1,
       health: 1,
-      yield: 1
+      yield: 1,
+      golem: 0
     };
 
     this.baseCosts = {
       damage: 25,
       firerate: 35,
       health: 40,
-      yield: 30
+      yield: 30,
+      golem: 60
     };
 
     this.costMultipliers = {
       damage: 1.45,
       firerate: 1.55,
       health: 1.4,
-      yield: 1.5
+      yield: 1.5,
+      golem: 1.65
     };
   }
 
@@ -66,7 +72,7 @@ export class Economy {
     const level = this.upgrades[type];
     const base = this.baseCosts[type];
     const mult = this.costMultipliers[type];
-    return Math.round(base * Math.pow(mult, level - 1));
+    return Math.round(base * Math.pow(mult, Math.max(0, level - 1)));
   }
 
   buyUpgrade(type) {
@@ -79,12 +85,12 @@ export class Economy {
     return false;
   }
 
-  // Meta Progression Calculations
   calculateShardPayout(wave, kills, totalEnergy) {
     const waveBonus = Math.max(0, (wave - 1) * 4);
     const killBonus = Math.floor(kills / 4);
     const energyBonus = Math.floor(totalEnergy / 180);
-    return Math.max(1, waveBonus + killBonus + energyBonus);
+    const fortuneMult = this.meta.fortune ? 1.4 : 1.0;
+    return Math.max(1, Math.round((waveBonus + killBonus + energyBonus) * fortuneMult));
   }
 
   addShards(amount) {
@@ -104,6 +110,14 @@ export class Economy {
         return 40;
       case 'unlockCryo':
         return 50;
+      case 'multishot':
+        return 35;
+      case 'flame':
+        return 45;
+      case 'thorns':
+        return 30;
+      case 'fortune':
+        return 40;
       default:
         return 999;
     }
@@ -113,12 +127,9 @@ export class Economy {
     const cost = this.getMetaCost(type);
     if (this.coreShards < cost) return false;
 
-    if (type === 'unlockTesla') {
-      if (this.meta.unlockTesla) return false;
-      this.meta.unlockTesla = true;
-    } else if (type === 'unlockCryo') {
-      if (this.meta.unlockCryo) return false;
-      this.meta.unlockCryo = true;
+    if (typeof this.meta[type] === 'boolean') {
+      if (this.meta[type]) return false;
+      this.meta[type] = true;
     } else {
       this.meta[type]++;
     }
