@@ -1,5 +1,5 @@
 import { Isometric } from '../core/Isometric.js';
-import { addFloatingText, audio, triggerScreenShake, particleSystem } from '../main.js';
+import { audio, triggerScreenShake, particleSystem } from '../main.js';
 
 export class TeslaCoil {
   constructor(x = 0, y = 0) {
@@ -19,7 +19,10 @@ export class TeslaCoil {
     for (let i = this.activeArcs.length - 1; i >= 0; i--) {
       this.activeArcs[i].alpha -= dt * 3.5;
       if (this.activeArcs[i].alpha <= 0) {
-        this.activeArcs.splice(i, 1);
+        const last = this.activeArcs.pop();
+        if (i < this.activeArcs.length) {
+          this.activeArcs[i] = last;
+        }
       }
     }
 
@@ -32,12 +35,15 @@ export class TeslaCoil {
 
   discharge(enemies) {
     let currentTarget = null;
-    let minDist = this.range;
+    let minDistSq = this.range * this.range;
 
-    for (const enemy of enemies) {
-      const d = Math.hypot(enemy.x - this.x, enemy.y - this.y);
-      if (d < minDist) {
-        minDist = d;
+    for (let i = 0; i < enemies.length; i++) {
+      const enemy = enemies[i];
+      const dx = enemy.x - this.x;
+      const dy = enemy.y - this.y;
+      const dSq = dx * dx + dy * dy;
+      if (dSq < minDistSq) {
+        minDistSq = dSq;
         currentTarget = enemy;
       }
     }
@@ -62,15 +68,20 @@ export class TeslaCoil {
     particleSystem.emitSparks(currentTarget.x, currentTarget.y, 14, '#32d6d6', 6);
 
     let prev = currentTarget;
+    const maxChainDistSq = 140 * 140;
+
     for (let chain = 1; chain < this.maxChains; chain++) {
       let nextTarget = null;
-      let nextDist = 140;
+      let nextDistSq = maxChainDistSq;
 
-      for (const enemy of enemies) {
+      for (let i = 0; i < enemies.length; i++) {
+        const enemy = enemies[i];
         if (hitEnemies.includes(enemy)) continue;
-        const d = Math.hypot(enemy.x - prev.x, enemy.y - prev.y);
-        if (d < nextDist) {
-          nextDist = d;
+        const dx = enemy.x - prev.x;
+        const dy = enemy.y - prev.y;
+        const dSq = dx * dx + dy * dy;
+        if (dSq < nextDistSq) {
+          nextDistSq = dSq;
           nextTarget = enemy;
         }
       }
@@ -100,8 +111,8 @@ export class TeslaCoil {
   }
 
   draw(ctx, originX = 0, originY = 0) {
-    // Lightning Rod discharge arcs
-    for (const arc of this.activeArcs) {
+    for (let i = 0; i < this.activeArcs.length; i++) {
+      const arc = this.activeArcs[i];
       const p1 = Isometric.worldToScreen(arc.x1, arc.y1, arc.z1, originX, originY);
       const p2 = Isometric.worldToScreen(arc.x2, arc.y2, arc.z2, originX, originY);
 
@@ -112,20 +123,19 @@ export class TeslaCoil {
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
 
-      const midX = (p1.x + p2.x) / 2 + (Math.random() - 0.5) * 18;
-      const midY = (p1.y + p2.y) / 2 + (Math.random() - 0.5) * 18;
+      const midX = (p1.x + p2.x) * 0.5 + (Math.random() - 0.5) * 18;
+      const midY = (p1.y + p2.y) * 0.5 + (Math.random() - 0.5) * 18;
       ctx.lineTo(midX, midY);
       ctx.lineTo(p2.x, p2.y);
       ctx.stroke();
       ctx.restore();
     }
 
-    // Copper / Iron Lightning Rod Top
     const pylon = Isometric.worldToScreen(this.x, this.y, 20, originX, originY);
     ctx.save();
     ctx.beginPath();
     ctx.ellipse(pylon.x, pylon.y, 10, 5, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#b87333'; // Copper rod
+    ctx.fillStyle = '#b87333';
     ctx.fill();
     ctx.strokeStyle = '#e09858';
     ctx.lineWidth = 1.5;
