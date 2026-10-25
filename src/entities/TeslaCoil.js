@@ -44,7 +44,7 @@ export class TeslaCoil {
 
     if (!currentTarget) return false;
 
-    audio.playTeslaZap();
+    audio.playLightningStrike();
     triggerScreenShake(4);
 
     const hitEnemies = [currentTarget];
@@ -59,7 +59,7 @@ export class TeslaCoil {
     });
 
     currentTarget.takeDamage(this.damage);
-    particleSystem.emitSparks(currentTarget.x, currentTarget.y, 14, '#00ffea', 6);
+    particleSystem.emitSparks(currentTarget.x, currentTarget.y, 14, '#32d6d6', 6);
 
     let prev = currentTarget;
     for (let chain = 1; chain < this.maxChains; chain++) {
@@ -89,7 +89,7 @@ export class TeslaCoil {
 
         const chainDamage = Math.round(this.damage * 0.75);
         nextTarget.takeDamage(chainDamage);
-        particleSystem.emitSparks(nextTarget.x, nextTarget.y, 14, '#00ffea', 5);
+        particleSystem.emitSparks(nextTarget.x, nextTarget.y, 14, '#32d6d6', 5);
         prev = nextTarget;
       } else {
         break;
@@ -100,33 +100,35 @@ export class TeslaCoil {
   }
 
   draw(ctx, originX = 0, originY = 0) {
+    // Lightning Rod discharge arcs
     for (const arc of this.activeArcs) {
       const p1 = Isometric.worldToScreen(arc.x1, arc.y1, arc.z1, originX, originY);
       const p2 = Isometric.worldToScreen(arc.x2, arc.y2, arc.z2, originX, originY);
 
       ctx.save();
-      ctx.strokeStyle = `rgba(0, 255, 234, ${Math.max(0, arc.alpha)})`;
-      ctx.shadowColor = '#00ffea';
-      ctx.shadowBlur = 12;
+      ctx.strokeStyle = `rgba(100, 240, 255, ${Math.max(0, arc.alpha)})`;
       ctx.lineWidth = 2.5;
 
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
 
-      const midX = (p1.x + p2.x) / 2 + (Math.random() - 0.5) * 22;
-      const midY = (p1.y + p2.y) / 2 + (Math.random() - 0.5) * 22;
+      const midX = (p1.x + p2.x) / 2 + (Math.random() - 0.5) * 18;
+      const midY = (p1.y + p2.y) / 2 + (Math.random() - 0.5) * 18;
       ctx.lineTo(midX, midY);
       ctx.lineTo(p2.x, p2.y);
       ctx.stroke();
       ctx.restore();
     }
 
-    const pylon = Isometric.worldToScreen(this.x, this.y, 18, originX, originY);
+    // Copper / Iron Lightning Rod Top
+    const pylon = Isometric.worldToScreen(this.x, this.y, 20, originX, originY);
     ctx.save();
     ctx.beginPath();
-    ctx.ellipse(pylon.x, pylon.y, 14, 7, 0, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(0, 255, 234, 0.45)';
-    ctx.lineWidth = 2;
+    ctx.ellipse(pylon.x, pylon.y, 10, 5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#b87333'; // Copper rod
+    ctx.fill();
+    ctx.strokeStyle = '#e09858';
+    ctx.lineWidth = 1.5;
     ctx.stroke();
     ctx.restore();
   }
