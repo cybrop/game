@@ -4,17 +4,40 @@ import { TeslaCoil } from './entities/TeslaCoil.js';
 import { CryoField } from './entities/CryoField.js';
 import { WaveManager } from './systems/Waves.js';
 import { Economy } from './systems/Economy.js';
+import { AudioManager } from './systems/Audio.js';
 
 // Setup Canvas
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
+export const audio = new AudioManager();
+
 function resizeCanvas() {
   const container = document.getElementById('canvas-container');
+  if (!container) return;
   canvas.width = container.clientWidth;
   canvas.height = container.clientHeight;
+
+  const centerX = canvas.width / 2;
+  const centerY = canvas.height / 2;
+  if (core) {
+    core.x = centerX;
+    core.y = centerY;
+  }
+  if (turret) {
+    turret.x = centerX;
+    turret.y = centerY;
+  }
+  if (teslaCoil) {
+    teslaCoil.x = centerX;
+    teslaCoil.y = centerY;
+  }
+  if (cryoField) {
+    cryoField.x = centerX;
+    cryoField.y = centerY;
+  }
 }
-resizeCanvas();
+
 window.addEventListener('resize', resizeCanvas);
 
 // UI references
@@ -29,6 +52,8 @@ const ui = {
   range: document.getElementById('stat-range'),
   statTesla: document.getElementById('stat-tesla'),
   statCryo: document.getElementById('stat-cryo'),
+  audioToggleBtn: document.getElementById('audio-toggle-btn'),
+  audioIcon: document.getElementById('audio-icon'),
 
   // Upgrade buttons
   lvlDamage: document.getElementById('lvl-damage'),
@@ -92,7 +117,7 @@ let core;
 let turret;
 let teslaCoil = null;
 let cryoField = null;
-let economy;
+let economy = new Economy();
 let waveManager;
 let bullets = [];
 let particles = [];
@@ -101,53 +126,80 @@ let shockwaves = [];
 let killsCount = 0;
 let isGameOver = false;
 let isPaused = false;
+let animationFrameId = null;
 let lastTimestamp = performance.now();
 
-export function addFloatingText(x, y, text, color = '#00f3ff') {
+// Screen Shake Engine
+let screenShake = {
+  intensity: 0,
+  decay: 0.9,
+  offsetX: 0,
+  offsetY: 0
+};
+
+export function triggerScreenShake(strength = 8) {
+  screenShake.intensity = Math.max(screenShake.intensity, strength);
+}
+
+// Extraction Vein System
+let veinPulseTime = 0;
+
+export function addFloatingText(x, y, text, color = '#00f3ff', isCritical = false) {
   floatingTexts.push({
     x,
     y,
     text,
     color,
     alpha: 1,
-    life: 0.8
+    size: isCritical ? 16 : 13,
+    vy: isCritical ? -40 : -28,
+    life: isCritical ? 1.0 : 0.75
   });
 }
 
-export function createExplosion(x, y, color = '#ff0055', count = 12) {
-  for (let i = 0; i < count; i++) {
+export function createExplosion(x, y, color = '#ff0055', count = 14, isHeavy = false) {
+  const particleCount = isHeavy ? count * 2 : count;
+  for (let i = 0; i < particleCount; i++) {
     const angle = Math.random() * Math.PI * 2;
-    const speed = Math.random() * 4 + 1;
+    const speed = (Math.random() * 4 + 1.5) * (isHeavy ? 1.8 : 1);
     particles.push({
       x,
       y,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
       color,
-      radius: Math.random() * 2.5 + 1,
+      radius: (Math.random() * 2.8 + 1) * (isHeavy ? 1.4 : 1),
       alpha: 1,
-      decay: Math.random() * 0.03 + 0.02
+      decay: Math.random() * 0.025 + 0.015
     });
   }
 }
 
 function initGame() {
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+  }
+
   resizeCanvas();
   const centerX = canvas.width / 2;
   const centerY = canvas.height / 2;
 
-  economy = new Economy();
-  const meta = economy.meta;
+  const currentShards = economy.coreShards;
+  const currentMeta = { ...economy.meta };
 
-  const baseHp = 100 + meta.baseHp * 40;
-  const baseDamage = 15 + meta.baseDamage * 5;
+  economy = new Economy();
+  economy.coreShards = currentShards;
+  economy.meta = currentMeta;
+
+  const baseHp = 100 + economy.meta.baseHp * 40;
+  const baseDamage = 15 + economy.meta.baseDamage * 5;
 
   core = new Core(centerX, centerY, baseHp);
   turret = new Turret(centerX, centerY, baseDamage);
 
-  // Initialize specialized weapons if unlocked in workshop
-  teslaCoil = meta.unlockTesla ? new TeslaCoil(centerX, centerY) : null;
-  cryoField = meta.unlockCryo ? new CryoField(centerX, centerY) : null;
+  teslaCoil = economy.meta.unlockTesla ? new TeslaCoil(centerX, centerY) : null;
+  cryoField = economy.meta.unlockCryo ? new CryoField(centerX, centerY) : null;
 
   waveManager = new WaveManager();
 
@@ -158,12 +210,16 @@ function initGame() {
   killsCount = 0;
   isGameOver = false;
   isPaused = false;
+  screenShake.intensity = 0;
+  lastTimestamp = performance.now();
 
   ui.gameOverModal.classList.add('hidden');
   ui.workshopModal.classList.add('hidden');
 
   updateUI();
   updateWorkshopUI();
+
+  animationFrameId = requestAnimationFrame(gameLoop);
 }
 
 function updateUI() {
@@ -181,9 +237,8 @@ function updateUI() {
   ui.statCryo.textContent = economy.meta.unlockCryo ? 'Active' : 'Locked';
   ui.statCryo.style.color = economy.meta.unlockCryo ? '#00f3ff' : '#7482a5';
 
-  // Wave status
   if (waveManager.isIntermission) {
-    ui.waveProgress.textContent = `Next wave in ${(waveManager.intermissionTimer).toFixed(1)}s`;
+    ui.waveProgress.textContent = `Next wave in ${(Math.max(0, waveManager.intermissionTimer)).toFixed(1)}s`;
   } else {
     ui.waveProgress.textContent = `Enemies: ${waveManager.enemies.length + (waveManager.enemiesToSpawn - waveManager.enemiesSpawned)}`;
   }
@@ -221,25 +276,21 @@ function updateWorkshopUI() {
   const meta = economy.meta;
   ui.workshopShardsVal.textContent = economy.coreShards;
 
-  // Base Energy
   const energyCost = economy.getMetaCost('baseEnergy');
   ui.metaLvlBaseEnergy.textContent = meta.baseEnergy;
   ui.metaCostBaseEnergy.textContent = energyCost;
   ui.btnMetaBaseEnergy.disabled = economy.coreShards < energyCost;
 
-  // Base HP
   const hpCost = economy.getMetaCost('baseHp');
   ui.metaLvlBaseHp.textContent = meta.baseHp;
   ui.metaCostBaseHp.textContent = hpCost;
   ui.btnMetaBaseHp.disabled = economy.coreShards < hpCost;
 
-  // Base Damage
   const damageCost = economy.getMetaCost('baseDamage');
   ui.metaLvlBaseDamage.textContent = meta.baseDamage;
   ui.metaCostBaseDamage.textContent = damageCost;
   ui.btnMetaBaseDamage.disabled = economy.coreShards < damageCost;
 
-  // Tesla Unlock
   if (meta.unlockTesla) {
     ui.metaStatusTesla.textContent = 'INSTALLED';
     ui.metaStatusTesla.style.color = '#00ff88';
@@ -252,7 +303,6 @@ function updateWorkshopUI() {
     ui.btnMetaUnlockTesla.textContent = 'UNLOCK (40 SHARDS)';
   }
 
-  // Cryo Unlock
   if (meta.unlockCryo) {
     ui.metaStatusCryo.textContent = 'INSTALLED';
     ui.metaStatusCryo.style.color = '#00ff88';
@@ -266,9 +316,10 @@ function updateWorkshopUI() {
   }
 }
 
-// In-Run Upgrade Handlers
+// In-Run Upgrade Handlers with sound
 ui.btnDamage.addEventListener('click', () => {
   if (economy.buyUpgrade('damage')) {
+    audio.playUpgrade();
     const baseDamage = 15 + economy.meta.baseDamage * 5;
     turret.damage = Math.round(baseDamage * Math.pow(1.22, economy.upgrades.damage - 1));
     updateUI();
@@ -277,6 +328,7 @@ ui.btnDamage.addEventListener('click', () => {
 
 ui.btnFirerate.addEventListener('click', () => {
   if (economy.buyUpgrade('firerate')) {
+    audio.playUpgrade();
     turret.fireCooldown = Math.max(120, Math.round(450 * Math.pow(0.9, economy.upgrades.firerate - 1)));
     updateUI();
   }
@@ -284,6 +336,7 @@ ui.btnFirerate.addEventListener('click', () => {
 
 ui.btnHealth.addEventListener('click', () => {
   if (economy.buyUpgrade('health')) {
+    audio.playUpgrade();
     const oldMax = core.maxHp;
     const baseHp = 100 + economy.meta.baseHp * 40;
     core.maxHp = Math.round(baseHp * Math.pow(1.25, economy.upgrades.health - 1));
@@ -294,13 +347,15 @@ ui.btnHealth.addEventListener('click', () => {
 
 ui.btnYield.addEventListener('click', () => {
   if (economy.buyUpgrade('yield')) {
+    audio.playUpgrade();
     updateUI();
   }
 });
 
-// Meta-Upgrade Handlers
+// Meta-Upgrade Handlers with sound
 ui.btnMetaBaseEnergy.addEventListener('click', () => {
   if (economy.buyMetaUpgrade('baseEnergy')) {
+    audio.playUpgrade();
     updateWorkshopUI();
     updateUI();
   }
@@ -308,6 +363,10 @@ ui.btnMetaBaseEnergy.addEventListener('click', () => {
 
 ui.btnMetaBaseHp.addEventListener('click', () => {
   if (economy.buyMetaUpgrade('baseHp')) {
+    audio.playUpgrade();
+    const hpDiff = 40;
+    core.maxHp += hpDiff;
+    core.heal(hpDiff);
     updateWorkshopUI();
     updateUI();
   }
@@ -315,6 +374,8 @@ ui.btnMetaBaseHp.addEventListener('click', () => {
 
 ui.btnMetaBaseDamage.addEventListener('click', () => {
   if (economy.buyMetaUpgrade('baseDamage')) {
+    audio.playUpgrade();
+    turret.damage += 5;
     updateWorkshopUI();
     updateUI();
   }
@@ -322,6 +383,10 @@ ui.btnMetaBaseDamage.addEventListener('click', () => {
 
 ui.btnMetaUnlockTesla.addEventListener('click', () => {
   if (economy.buyMetaUpgrade('unlockTesla')) {
+    audio.playUpgrade();
+    if (!teslaCoil) {
+      teslaCoil = new TeslaCoil(canvas.width / 2, canvas.height / 2);
+    }
     updateWorkshopUI();
     updateUI();
   }
@@ -329,9 +394,19 @@ ui.btnMetaUnlockTesla.addEventListener('click', () => {
 
 ui.btnMetaUnlockCryo.addEventListener('click', () => {
   if (economy.buyMetaUpgrade('unlockCryo')) {
+    audio.playUpgrade();
+    if (!cryoField) {
+      cryoField = new CryoField(canvas.width / 2, canvas.height / 2);
+    }
     updateWorkshopUI();
     updateUI();
   }
+});
+
+// Audio Toggle Button
+ui.audioToggleBtn.addEventListener('click', () => {
+  const isMuted = audio.toggleMute();
+  ui.audioIcon.textContent = isMuted ? '🔇' : '🔊';
 });
 
 // Navigation & Modals
@@ -353,6 +428,7 @@ ui.closeWorkshopBtn.addEventListener('click', () => {
     ui.gameOverModal.classList.remove('hidden');
   } else {
     isPaused = false;
+    lastTimestamp = performance.now();
   }
 });
 
@@ -363,35 +439,42 @@ ui.restartBtn.addEventListener('click', () => {
 // Orbital kinetic assistance
 canvas.addEventListener('pointerdown', (e) => {
   if (isGameOver || isPaused) return;
+  audio.init();
+
   const rect = canvas.getBoundingClientRect();
   const clickX = e.clientX - rect.left;
   const clickY = e.clientY - rect.top;
 
+  audio.playShockwave();
+  triggerScreenShake(7);
+
   shockwaves.push({
     x: clickX,
     y: clickY,
-    radius: 5,
-    maxRadius: 65,
+    radius: 6,
+    maxRadius: 75,
     alpha: 1
   });
 
-  const strikeDamage = Math.round(turret.damage * 0.85);
+  const strikeDamage = Math.round(turret.damage * 0.9);
   waveManager.enemies.forEach((enemy) => {
     const dist = Math.hypot(enemy.x - clickX, enemy.y - clickY);
-    if (dist < 65) {
+    if (dist < 75) {
       enemy.takeDamage(strikeDamage);
-      addFloatingText(enemy.x, enemy.y, `-${strikeDamage}`, '#00ffcc');
+      addFloatingText(enemy.x, enemy.y, `-${strikeDamage}`, '#00ffcc', true);
+      createExplosion(enemy.x, enemy.y, '#00f3ff', 8);
       const angle = Math.atan2(enemy.y - clickY, enemy.x - clickX);
-      enemy.x += Math.cos(angle) * 22;
-      enemy.y += Math.sin(angle) * 22;
+      enemy.x += Math.cos(angle) * 24;
+      enemy.y += Math.sin(angle) * 24;
     }
   });
 });
 
 function handleGameOver() {
   isGameOver = true;
+  audio.playCoreBreach();
+  triggerScreenShake(16);
 
-  // Calculate Shard Payout based on waves, enemies killed, and dark biomass mined
   const shardsEarned = economy.calculateShardPayout(
     waveManager.currentWave,
     killsCount,
@@ -408,10 +491,81 @@ function handleGameOver() {
   ui.gameOverModal.classList.remove('hidden');
 }
 
+// Background Visual Grid and Extraction Veins
+function drawBackgroundGridAndVeins(ctx, width, height, dt, energyRate) {
+  veinPulseTime += dt * (1.2 + energyRate * 0.08);
+
+  ctx.save();
+
+  // Grid
+  const gridSize = 45;
+  ctx.strokeStyle = 'rgba(26, 34, 62, 0.45)';
+  ctx.lineWidth = 1;
+
+  for (let x = 0; x < width; x += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+  }
+
+  for (let y = 0; y < height; y += gridSize) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+    ctx.stroke();
+  }
+
+  // Glowing Extraction Veins moving into center core
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const veinCount = 8;
+
+  for (let i = 0; i < veinCount; i++) {
+    const baseAngle = (i * Math.PI * 2) / veinCount;
+    const veinLength = Math.max(width, height) * 0.7;
+    const startX = centerX + Math.cos(baseAngle) * veinLength;
+    const startY = centerY + Math.sin(baseAngle) * veinLength;
+
+    // Glowing main conduit line
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(centerX, centerY);
+    ctx.strokeStyle = 'rgba(0, 243, 255, 0.12)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Pulse node packet traveling inward to the drill
+    const pulseOffset = (veinPulseTime * 0.2 + (i / veinCount)) % 1;
+    const nodeX = startX + (centerX - startX) * pulseOffset;
+    const nodeY = startY + (centerY - startY) * pulseOffset;
+
+    ctx.beginPath();
+    ctx.arc(nodeX, nodeY, 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#00f3ff';
+    ctx.shadowColor = '#00f3ff';
+    ctx.shadowBlur = 8;
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 // Main Game Loop
 function gameLoop(timestamp) {
   const dt = Math.min((timestamp - lastTimestamp) / 1000, 0.1);
   lastTimestamp = timestamp;
+
+  // Process Screen Shake
+  if (screenShake.intensity > 0.1) {
+    screenShake.offsetX = (Math.random() - 0.5) * screenShake.intensity;
+    screenShake.offsetY = (Math.random() - 0.5) * screenShake.intensity;
+    screenShake.intensity *= screenShake.decay;
+  } else {
+    screenShake.offsetX = 0;
+    screenShake.offsetY = 0;
+    screenShake.intensity = 0;
+  }
 
   if (!isGameOver && !isPaused) {
     // 1. Passive Energy
@@ -447,8 +601,9 @@ function gameLoop(timestamp) {
         const dist = Math.hypot(b.x - enemy.x, b.y - enemy.y);
         if (dist < b.radius + enemy.radius) {
           enemy.takeDamage(b.damage);
-          addFloatingText(enemy.x, enemy.y, `-${b.damage}`, '#ff0055');
-          createExplosion(b.x, b.y, '#00f3ff', 5);
+          audio.playImpact();
+          addFloatingText(enemy.x, enemy.y, `-${b.damage}`, '#ff0077');
+          createExplosion(b.x, b.y, '#00f3ff', 6);
           hit = true;
           break;
         }
@@ -466,8 +621,11 @@ function gameLoop(timestamp) {
       const distToCore = Math.hypot(enemy.x - core.x, enemy.y - core.y);
       if (distToCore < core.radius + enemy.radius) {
         core.takeDamage(enemy.damage);
-        createExplosion(enemy.x, enemy.y, '#ff3344', 16);
-        addFloatingText(core.x, core.y - 20, `-${enemy.damage} HP`, '#ff3344');
+        const isBrute = enemy.type === 'brute';
+        audio.playExplosion(isBrute);
+        triggerScreenShake(isBrute ? 12 : 7);
+        createExplosion(enemy.x, enemy.y, '#ff3344', 20, isBrute);
+        addFloatingText(core.x, core.y - 20, `-${enemy.damage} HP`, '#ff3344', true);
         waveManager.enemies.splice(i, 1);
 
         if (core.isDestroyed()) {
@@ -478,10 +636,13 @@ function gameLoop(timestamp) {
       }
 
       if (enemy.isDead()) {
+        const isBrute = enemy.type === 'brute';
         economy.addEnergy(enemy.reward);
         killsCount++;
-        addFloatingText(enemy.x, enemy.y - 10, `+${enemy.reward}E`, '#ffd000');
-        createExplosion(enemy.x, enemy.y, enemy.accentColor, 14);
+        audio.playExplosion(isBrute);
+        if (isBrute) triggerScreenShake(6);
+        addFloatingText(enemy.x, enemy.y - 12, `+${enemy.reward}E`, '#ffd000', isBrute);
+        createExplosion(enemy.x, enemy.y, enemy.accentColor, 16, isBrute);
         waveManager.enemies.splice(i, 1);
       }
     }
@@ -489,9 +650,13 @@ function gameLoop(timestamp) {
     updateUI();
   }
 
-  // --- RENDERING ---
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawGrid(ctx, canvas.width, canvas.height);
+  // --- RENDERING WITH SCREEN SHAKE ---
+  ctx.save();
+  ctx.translate(screenShake.offsetX, screenShake.offsetY);
+  ctx.clearRect(-20, -20, canvas.width + 40, canvas.height + 40);
+
+  // Background Grid and Extraction Veins
+  drawBackgroundGridAndVeins(ctx, canvas.width, canvas.height, dt, economy.getEnergyRate());
 
   // Cryo Field Area & Pulse
   if (cryoField) {
@@ -511,13 +676,15 @@ function gameLoop(timestamp) {
   // Shockwaves
   for (let i = shockwaves.length - 1; i >= 0; i--) {
     const sw = shockwaves[i];
-    sw.radius += (sw.maxRadius - sw.radius) * 0.2;
-    sw.alpha -= 0.05;
+    sw.radius += (sw.maxRadius - sw.radius) * 0.22;
+    sw.alpha -= 0.055;
     ctx.save();
     ctx.beginPath();
     ctx.arc(sw.x, sw.y, sw.radius, 0, Math.PI * 2);
     ctx.strokeStyle = `rgba(0, 243, 255, ${Math.max(0, sw.alpha)})`;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3.5;
+    ctx.shadowColor = '#00f3ff';
+    ctx.shadowBlur = 10;
     ctx.stroke();
     ctx.restore();
     if (sw.alpha <= 0) shockwaves.splice(i, 1);
@@ -542,8 +709,10 @@ function gameLoop(timestamp) {
     }
 
     ctx.save();
-    ctx.globalAlpha = p.alpha;
+    ctx.globalAlpha = Math.max(0, p.alpha);
     ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 6;
     ctx.beginPath();
     ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
     ctx.fill();
@@ -553,7 +722,7 @@ function gameLoop(timestamp) {
   // Floating text
   for (let i = floatingTexts.length - 1; i >= 0; i--) {
     const ft = floatingTexts[i];
-    ft.y -= 25 * dt;
+    ft.y += ft.vy * dt;
     ft.alpha -= dt / ft.life;
 
     if (ft.alpha <= 0) {
@@ -563,37 +732,18 @@ function gameLoop(timestamp) {
 
     ctx.save();
     ctx.globalAlpha = Math.max(0, ft.alpha);
-    ctx.font = 'bold 12px Consolas, monospace';
+    ctx.font = `bold ${ft.size}px Consolas, monospace`;
     ctx.fillStyle = ft.color;
-    ctx.fillText(ft.text, ft.x - 10, ft.y);
+    ctx.shadowColor = ft.color;
+    ctx.shadowBlur = 8;
+    ctx.fillText(ft.text, ft.x - 12, ft.y);
     ctx.restore();
   }
 
-  requestAnimationFrame(gameLoop);
-}
-
-function drawGrid(ctx, width, height) {
-  const gridSize = 40;
-  ctx.save();
-  ctx.strokeStyle = 'rgba(26, 34, 62, 0.4)';
-  ctx.lineWidth = 1;
-
-  for (let x = 0; x < width; x += gridSize) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-    ctx.stroke();
-  }
-
-  for (let y = 0; y < height; y += gridSize) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
-    ctx.stroke();
-  }
   ctx.restore();
+
+  animationFrameId = requestAnimationFrame(gameLoop);
 }
 
 // Start
 initGame();
-requestAnimationFrame(gameLoop);
