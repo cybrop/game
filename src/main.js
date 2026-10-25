@@ -10,6 +10,7 @@ import { CryoField } from './entities/CryoField.js';
 import { WaveManager } from './systems/Waves.js';
 import { Economy } from './systems/Economy.js';
 import { AudioManager } from './systems/Audio.js';
+import { ParticleSystem } from './systems/ParticleSystem.js';
 import { CrazyGamesSDK } from './sdk/crazy.js';
 
 // Modular UI components
@@ -26,6 +27,7 @@ export const audio = new AudioManager();
 export const crazySdk = new CrazyGamesSDK();
 export const gameState = new GameState();
 export const renderer = new Renderer(canvas, ctx);
+export const particleSystem = new ParticleSystem();
 
 let dpr = 1;
 let logicalWidth = CONFIG.CANVAS.DEFAULT_WIDTH;
@@ -38,9 +40,7 @@ let cryoField = null;
 let economy = new Economy();
 let waveManager;
 let bullets = [];
-let particles = [];
 let floatingTexts = [];
-let shockwaves = [];
 
 function resizeCanvas() {
   const container = document.getElementById('canvas-container');
@@ -110,22 +110,8 @@ export function addFloatingText(x, y, text, color = '#00f3ff', isCritical = fals
   });
 }
 
-export function createExplosion(x, y, color = '#ff0055', count = 14, isHeavy = false) {
-  const particleCount = isHeavy ? count * 2 : count;
-  for (let i = 0; i < particleCount; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const speed = (Math.random() * 4 + 1.5) * (isHeavy ? 1.8 : 1);
-    particles.push({
-      x,
-      y,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      color,
-      radius: (Math.random() * 2.8 + 1) * (isHeavy ? 1.4 : 1),
-      alpha: 1,
-      decay: Math.random() * 0.025 + 0.015
-    });
-  }
+export function createExplosion(worldX, worldY, worldZ = 12, color = '#ff0055', count = 16, isHeavy = false) {
+  particleSystem.emitExplosion(worldX, worldY, worldZ, color, count, isHeavy);
 }
 
 function handleBuyInRunUpgrade(type) {
@@ -219,12 +205,16 @@ function handleEmergencyRevive() {
       gameState.hasRevivedThisRun = true;
       gameState.isGameOver = false;
       core.heal(Math.round(core.maxHp * 0.5));
-      waveManager.enemies.forEach(e => e.takeDamage(999));
+      waveManager.enemies.forEach(e => {
+        particleSystem.emitExplosion(e.x, e.y, e.height, e.accentColor, 14, false);
+        e.takeDamage(999);
+      });
       bullets = [];
 
       gameOverModal.hide();
       audio.playShockwave();
-      triggerScreenShake(12);
+      particleSystem.emitShockwave(0, 0, 140, '#00f3ff');
+      triggerScreenShake(14);
       crazySdk.gameplayStart();
       loop.resetTime();
     }
@@ -265,6 +255,7 @@ function initGame() {
   economy.meta = currentMeta;
 
   gameState.reset();
+  particleSystem.reset();
 
   const baseHp = CONFIG.CORE.BASE_HP + economy.meta.baseHp * CONFIG.CORE.HP_PER_META_LEVEL;
   const baseDamage = CONFIG.TURRET.BASE_DAMAGE + economy.meta.baseDamage * CONFIG.TURRET.DAMAGE_PER_META_LEVEL;
@@ -278,9 +269,7 @@ function initGame() {
   waveManager = new WaveManager();
 
   bullets = [];
-  particles = [];
   floatingTexts = [];
-  shockwaves = [];
 
   gameOverModal.hide();
   workshopModal.hide();
@@ -343,13 +332,8 @@ canvas.addEventListener('pointerdown', (e) => {
   audio.playShockwave();
   triggerScreenShake(7);
 
-  shockwaves.push({
-    x: screenClickX,
-    y: screenClickY,
-    radius: 6,
-    maxRadius: CONFIG.STRIKE.RADIUS,
-    alpha: 1
-  });
+  // Emit 2.5D floor shockwave on world position
+  particleSystem.emitShockwave(worldPos.x, worldPos.y, CONFIG.STRIKE.RADIUS, '#00f3ff');
 
   const strikeDamage = Math.round(turret.damage * CONFIG.STRIKE.DAMAGE_FACTOR);
   waveManager.enemies.forEach((enemy) => {
@@ -358,7 +342,7 @@ canvas.addEventListener('pointerdown', (e) => {
       enemy.takeDamage(strikeDamage);
       const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, enemy.height + 4, originX, originY);
       addFloatingText(enemyScreen.x, enemyScreen.y, `-${strikeDamage}`, '#00ffcc', true);
-      createExplosion(enemyScreen.x, enemyScreen.y, '#00f3ff', 8);
+      particleSystem.emitSparks(enemy.x, enemy.y, enemy.height, '#00f3ff', 8);
 
       const angle = Math.atan2(enemy.y - worldPos.y, enemy.x - worldPos.x);
       enemy.x += Math.cos(angle) * CONFIG.STRIKE.KNOCKBACK;
@@ -374,6 +358,7 @@ function update(dt, timestamp) {
   if (!gameState.isGameOver && !gameState.isPaused) {
     economy.update(dt);
     core.update(dt);
+    particleSystem.update(dt);
 
     const originX = logicalWidth / 2;
     const originY = logicalHeight / 2 + 30;
@@ -392,7 +377,6 @@ function update(dt, timestamp) {
       for (let j = 0; j < waveManager.enemies.length; j++) {
         const enemy = waveManager.enemies[j];
         const dist2D = Math.hypot(b.x - enemy.x, b.y - enemy.y);
-        // 3D Collision volume check
         const heightMatch = b.z <= enemy.height + 8 && b.z >= 0;
 
         if (dist2D < b.radius + enemy.radius && heightMatch) {
@@ -401,7 +385,7 @@ function update(dt, timestamp) {
 
           const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, b.z, originX, originY);
           addFloatingText(enemyScreen.x, enemyScreen.y, `-${b.damage}`, '#ff0077');
-          createExplosion(enemyScreen.x, enemyScreen.y, '#00f3ff', 6);
+          particleSystem.emitSparks(b.x, b.y, b.z, '#00f3ff', 6, b.angle + Math.PI);
           hit = true;
           break;
         }
@@ -423,10 +407,9 @@ function update(dt, timestamp) {
         audio.playExplosion(isBrute);
         triggerScreenShake(isBrute ? 12 : 7);
 
-        const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, enemy.height, originX, originY);
         const coreScreen = Isometric.worldToScreen(core.x, core.y, 35, originX, originY);
-
-        createExplosion(enemyScreen.x, enemyScreen.y, '#ff3344', 20, isBrute);
+        particleSystem.emitExplosion(enemy.x, enemy.y, enemy.height, '#ff3344', 20, isBrute);
+        particleSystem.emitShockwave(core.x, core.y, 40, '#ff3344');
         addFloatingText(coreScreen.x, coreScreen.y - 15, `-${enemy.damage} HP`, '#ff3344', true);
         waveManager.enemies.splice(i, 1);
 
@@ -446,7 +429,7 @@ function update(dt, timestamp) {
 
         const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, enemy.height, originX, originY);
         addFloatingText(enemyScreen.x, enemyScreen.y - 10, `+${enemy.reward}E`, '#ffd000', isBrute);
-        createExplosion(enemyScreen.x, enemyScreen.y, enemy.accentColor, 16, isBrute);
+        particleSystem.emitExplosion(enemy.x, enemy.y, enemy.height, enemy.accentColor, 16, isBrute);
         waveManager.enemies.splice(i, 1);
       }
     }
@@ -472,12 +455,11 @@ function render(dt, timestamp) {
     cryoField,
     waveManager,
     bullets,
-    particles,
-    floatingTexts,
-    shockwaves
+    particleSystem,
+    floatingTexts
   });
 
-  const totalEntities = (waveManager ? waveManager.enemies.length : 0) + bullets.length + particles.length;
+  const totalEntities = (waveManager ? waveManager.enemies.length : 0) + bullets.length + particleSystem.getActiveCount();
   profiler.update(timestamp, totalEntities, performance.now() - frameStart);
 }
 
