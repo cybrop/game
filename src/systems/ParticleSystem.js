@@ -1,8 +1,8 @@
 import { Isometric } from '../core/Isometric.js';
 
 /**
- * High-performance 2.5D / 3D Particle & Visual FX System
- * Includes hard caps to protect framerate under intense swarms.
+ * 2.5D / 3D Voxel Particle & Block Debris System
+ * Renders block fragments, redstone sparks, and stone chips bouncing on the isometric terrain.
  */
 export class ParticleSystem {
   constructor() {
@@ -10,7 +10,6 @@ export class ParticleSystem {
     this.splatters = [];
     this.shockwaves = [];
 
-    // Performance budget clamps for 60 FPS stability
     this.MAX_PARTICLES = 320;
     this.MAX_SPLATTERS = 50;
     this.MAX_SHOCKWAVES = 12;
@@ -23,22 +22,21 @@ export class ParticleSystem {
   }
 
   /**
-   * Spawn 3D particles with velocity, elevation, and floor bounce
+   * Spawn 3D blocky fragments with velocity, elevation, and ground bounce
    */
   emitExplosion(worldX, worldY, worldZ = 10, color = '#ff0055', count = 16, isHeavy = false) {
-    // If over particle budget, cull spawn amount
     const allowance = this.MAX_PARTICLES - this.particles.length;
     if (allowance <= 0) return;
 
     const requested = isHeavy ? count * 2 : count;
     const total = Math.min(allowance, requested);
-    const baseSpeed = isHeavy ? 140 : 90;
-    const gravity = isHeavy ? 280 : 180;
+    const baseSpeed = isHeavy ? 130 : 85;
+    const gravity = isHeavy ? 300 : 200;
 
     for (let i = 0; i < total; i++) {
       const angle = Math.random() * Math.PI * 2;
       const horizontalSpeed = (Math.random() * 0.8 + 0.2) * baseSpeed;
-      const vz = (Math.random() * 1.2 + 0.3) * (baseSpeed * 0.9);
+      const vz = (Math.random() * 1.2 + 0.4) * (baseSpeed * 0.9);
 
       this.particles.push({
         x: worldX,
@@ -49,20 +47,20 @@ export class ParticleSystem {
         vz,
         gravity,
         bounces: isHeavy ? 2 : 1,
-        restitution: 0.45,
-        radius: (Math.random() * 2.5 + 1.2) * (isHeavy ? 1.4 : 1),
+        restitution: 0.4,
+        size: (Math.random() * 2.8 + 2.0) * (isHeavy ? 1.3 : 1),
         color,
         alpha: 1,
-        decay: Math.random() * 0.35 + 0.5,
+        decay: Math.random() * 0.35 + 0.55,
         age: 0
       });
     }
   }
 
   /**
-   * Spawn targeted kinetic sparks
+   * Spawn block crack chips & sparks
    */
-  emitSparks(worldX, worldY, worldZ = 12, color = '#00f3ff', count = 8, biasAngle = null) {
+  emitSparks(worldX, worldY, worldZ = 12, color = '#d61c1c', count = 8, biasAngle = null) {
     const allowance = this.MAX_PARTICLES - this.particles.length;
     if (allowance <= 0) return;
 
@@ -71,7 +69,7 @@ export class ParticleSystem {
       const angle = biasAngle !== null
         ? biasAngle + (Math.random() - 0.5) * 1.2
         : Math.random() * Math.PI * 2;
-      const speed = Math.random() * 120 + 40;
+      const speed = Math.random() * 110 + 35;
 
       this.particles.push({
         x: worldX,
@@ -79,11 +77,11 @@ export class ParticleSystem {
         z: worldZ,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
-        vz: Math.random() * 80 + 30,
-        gravity: 220,
+        vz: Math.random() * 70 + 25,
+        gravity: 240,
         bounces: 1,
-        restitution: 0.35,
-        radius: Math.random() * 1.8 + 0.8,
+        restitution: 0.3,
+        size: Math.random() * 2.0 + 1.2,
         color,
         alpha: 1,
         decay: Math.random() * 0.2 + 0.3,
@@ -95,9 +93,9 @@ export class ParticleSystem {
   /**
    * Spawn 2.5D Isometric Shockwave on the ground plane
    */
-  emitShockwave(worldX, worldY, maxRadius = 75, color = '#00f3ff') {
+  emitShockwave(worldX, worldY, maxRadius = 75, color = '#d61c1c') {
     if (this.shockwaves.length >= this.MAX_SHOCKWAVES) {
-      this.shockwaves.shift(); // Evict oldest
+      this.shockwaves.shift();
     }
 
     this.shockwaves.push({
@@ -112,7 +110,6 @@ export class ParticleSystem {
   }
 
   update(dt) {
-    // 1. Update 3D Particles
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
       p.age += dt;
@@ -129,16 +126,16 @@ export class ParticleSystem {
         if (p.bounces > 0) {
           p.bounces--;
           p.vz = -p.vz * p.restitution;
-          p.vx *= 0.65;
-          p.vy *= 0.65;
+          p.vx *= 0.6;
+          p.vy *= 0.6;
 
           if (this.splatters.length < this.MAX_SPLATTERS && p.age < p.decay * 0.6) {
             this.splatters.push({
               x: p.x,
               y: p.y,
-              radius: p.radius * (Math.random() * 1.4 + 1.1),
+              size: p.size * (Math.random() * 1.3 + 1.0),
               color: p.color,
-              alpha: p.alpha * 0.6,
+              alpha: p.alpha * 0.65,
               decay: 0.7,
               age: 0
             });
@@ -155,17 +152,17 @@ export class ParticleSystem {
       }
     }
 
-    // 2. Update Ground Splatters
+    // Ground block impact debris splatters
     for (let i = this.splatters.length - 1; i >= 0; i--) {
       const s = this.splatters[i];
       s.age += dt;
-      s.alpha = Math.max(0, 0.6 * (1 - (s.age / s.decay)));
+      s.alpha = Math.max(0, 0.65 * (1 - (s.age / s.decay)));
       if (s.alpha <= 0) {
         this.splatters.splice(i, 1);
       }
     }
 
-    // 3. Update 2.5D Isometric Shockwaves
+    // Isometric shockwaves
     for (let i = this.shockwaves.length - 1; i >= 0; i--) {
       const sw = this.shockwaves[i];
       sw.radius += (sw.maxRadius - sw.radius) * Math.min(1, dt * 10);
@@ -180,12 +177,12 @@ export class ParticleSystem {
   drawGroundFX(ctx, originX, originY) {
     ctx.save();
 
-    // Splatters
+    // Voxel Block Splatter marks on z = 0
     for (let i = 0; i < this.splatters.length; i++) {
       const s = this.splatters[i];
       const pos = Isometric.worldToScreen(s.x, s.y, 0, originX, originY);
-      const rx = s.radius * Isometric.COS_A * 2;
-      const ry = s.radius * Isometric.SIN_A * 2;
+      const rx = s.size * Isometric.COS_A * 2;
+      const ry = s.size * Isometric.SIN_A * 2;
 
       ctx.beginPath();
       ctx.ellipse(pos.x, pos.y, rx, ry, 0, 0, Math.PI * 2);
@@ -194,7 +191,7 @@ export class ParticleSystem {
       ctx.fill();
     }
 
-    // Concentric Elliptical Shockwaves
+    // Concentric shockwaves
     for (let i = 0; i < this.shockwaves.length; i++) {
       const sw = this.shockwaves[i];
       const pos = Isometric.worldToScreen(sw.x, sw.y, 0, originX, originY);
@@ -206,8 +203,6 @@ export class ParticleSystem {
       ctx.strokeStyle = sw.color;
       ctx.globalAlpha = Math.max(0, sw.alpha);
       ctx.lineWidth = 3;
-      ctx.shadowColor = sw.color;
-      ctx.shadowBlur = 10;
       ctx.stroke();
 
       ctx.beginPath();
@@ -227,26 +222,25 @@ export class ParticleSystem {
     for (let i = 0; i < this.particles.length; i++) {
       const p = this.particles[i];
 
-      // Ground shadow beneath particle when airborne
+      // Ground shadow beneath block fragment
       if (p.z > 2) {
         const shadowPos = Isometric.worldToScreen(p.x, p.y, 0, originX, originY);
         const shadowScale = Math.max(0.3, 1 - (p.z / 80));
         ctx.beginPath();
-        ctx.ellipse(shadowPos.x, shadowPos.y, p.radius * 1.5 * shadowScale, p.radius * 0.75 * shadowScale, 0, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
-        ctx.globalAlpha = Math.max(0, p.alpha * 0.6);
+        ctx.ellipse(shadowPos.x, shadowPos.y, p.size * 1.3 * shadowScale, p.size * 0.65 * shadowScale, 0, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+        ctx.globalAlpha = Math.max(0, p.alpha * 0.5);
         ctx.fill();
       }
 
-      // Projected 3D particle body
+      // Render 3D Square/Voxel Block Fragment
       const screenPos = Isometric.worldToScreen(p.x, p.y, p.z, originX, originY);
-      ctx.beginPath();
-      ctx.arc(screenPos.x, screenPos.y, p.radius, 0, Math.PI * 2);
-      ctx.fillStyle = p.color;
       ctx.globalAlpha = Math.max(0, p.alpha);
-      ctx.shadowColor = p.color;
-      ctx.shadowBlur = 4;
-      ctx.fill();
+      ctx.fillStyle = p.color;
+      ctx.fillRect(screenPos.x - p.size / 2, screenPos.y - p.size / 2, p.size, p.size);
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(screenPos.x - p.size / 2, screenPos.y - p.size / 2, p.size, p.size);
     }
 
     ctx.restore();
