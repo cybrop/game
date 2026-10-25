@@ -1,5 +1,5 @@
 import { Isometric } from '../core/Isometric.js';
-import { addFloatingText, createExplosion, audio, triggerScreenShake } from '../main.js';
+import { addFloatingText, audio, triggerScreenShake, particleSystem } from '../main.js';
 
 export class TeslaCoil {
   constructor(x = 0, y = 0) {
@@ -59,8 +59,8 @@ export class TeslaCoil {
     });
 
     currentTarget.takeDamage(this.damage);
+    particleSystem.emitSparks(currentTarget.x, currentTarget.y, 14, '#00ffea', 6);
 
-    // Chain jumps
     let prev = currentTarget;
     for (let chain = 1; chain < this.maxChains; chain++) {
       let nextTarget = null;
@@ -89,6 +89,7 @@ export class TeslaCoil {
 
         const chainDamage = Math.round(this.damage * 0.75);
         nextTarget.takeDamage(chainDamage);
+        particleSystem.emitSparks(nextTarget.x, nextTarget.y, 14, '#00ffea', 5);
         prev = nextTarget;
       } else {
         break;
@@ -99,7 +100,6 @@ export class TeslaCoil {
   }
 
   draw(ctx, originX = 0, originY = 0) {
-    // 2.5D Lightning Arcs
     for (const arc of this.activeArcs) {
       const p1 = Isometric.worldToScreen(arc.x1, arc.y1, arc.z1, originX, originY);
       const p2 = Isometric.worldToScreen(arc.x2, arc.y2, arc.z2, originX, originY);
@@ -121,7 +121,6 @@ export class TeslaCoil {
       ctx.restore();
     }
 
-    // Tesla Pylon Ring Node
     const pylon = Isometric.worldToScreen(this.x, this.y, 18, originX, originY);
     ctx.save();
     ctx.beginPath();
