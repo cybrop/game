@@ -11,60 +11,60 @@ export class WorkshopModal {
     this.container.innerHTML = `
       <div class="modal-box workshop-box">
         <div class="workshop-header">
-          <h1 class="neon-cyan">TECH LAB // WORKSHOP</h1>
+          <h1 class="ore-gold">ANVIL & WORKSHOP</h1>
           <div class="workshop-shards-counter">
-            CORE SHARDS: <span id="workshop-shards-val" class="neon-yellow">0</span>
+            EMERALDS: <span id="workshop-shards-val" class="ore-emerald">0</span>
           </div>
         </div>
-        <p class="workshop-desc">Install permanent orbital modifications that persist across all extractions.</p>
+        <p class="workshop-desc">Forge permanent Netherite and enchanted gear that persist across every respawn.</p>
         <div class="workshop-grid">
           <div class="meta-card">
-            <div class="meta-title">Overcharged Capacitors</div>
-            <div class="meta-desc">+2.5 Base Energy / sec</div>
+            <div class="meta-title">Redstone Capacitors</div>
+            <div class="meta-desc">+2.5 Starting Redstone / sec</div>
             <div class="meta-level">Level <span id="meta-lvl-baseEnergy">0</span></div>
             <button class="upgrade-btn" id="btn-meta-baseEnergy">
-              UPGRADE (<span id="meta-cost-baseEnergy">10</span> SHARDS)
+              UPGRADE (<span id="meta-cost-baseEnergy">10</span> E)
             </button>
           </div>
 
           <div class="meta-card">
-            <div class="meta-title">Reinforced Plating</div>
-            <div class="meta-desc">+40 Starting Core HP</div>
+            <div class="meta-title">Netherite Plating</div>
+            <div class="meta-desc">+40 Starting Beacon Base HP</div>
             <div class="meta-level">Level <span id="meta-lvl-baseHp">0</span></div>
             <button class="upgrade-btn" id="btn-meta-baseHp">
-              UPGRADE (<span id="meta-cost-baseHp">12</span> SHARDS)
+              UPGRADE (<span id="meta-cost-baseHp">12</span> E)
             </button>
           </div>
 
           <div class="meta-card">
-            <div class="meta-title">High-Velocity Cores</div>
-            <div class="meta-desc">+5 Base Projectile Damage</div>
+            <div class="meta-title">Power V Enchantment</div>
+            <div class="meta-desc">+5 Base Arrow Impact Damage</div>
             <div class="meta-level">Level <span id="meta-lvl-baseDamage">0</span></div>
             <button class="upgrade-btn" id="btn-meta-baseDamage">
-              UPGRADE (<span id="meta-cost-baseDamage">15</span> SHARDS)
+              UPGRADE (<span id="meta-cost-baseDamage">15</span> E)
             </button>
           </div>
 
           <div class="meta-card">
-            <div class="meta-title">Tesla Arc Coil</div>
-            <div class="meta-desc">Automated lightning discharge jumping to 3 enemies</div>
+            <div class="meta-title">Lightning Rod Array</div>
+            <div class="meta-desc">Strikes nearby mobs with chained electric lightning bolts</div>
             <div class="meta-level"><span id="meta-status-tesla">LOCKED</span></div>
             <button class="upgrade-btn" id="btn-meta-unlockTesla">
-              UNLOCK (40 SHARDS)
+              UNLOCK (40 E)
             </button>
           </div>
 
           <div class="meta-card">
-            <div class="meta-title">Cryo Emitter Field</div>
-            <div class="meta-desc">Aura slows enemies near core by 50% + frost damage</div>
+            <div class="meta-title">Soul Frost Brazier</div>
+            <div class="meta-desc">Blue soul fire slows monsters by 50% and burns over time</div>
             <div class="meta-level"><span id="meta-status-cryo">LOCKED</span></div>
             <button class="upgrade-btn" id="btn-meta-unlockCryo">
-              UNLOCK (50 SHARDS)
+              UNLOCK (50 E)
             </button>
           </div>
         </div>
         <div class="workshop-footer">
-          <button id="close-workshop-btn" class="action-btn">RETURN TO MISSION</button>
+          <button id="close-workshop-btn" class="action-btn">RETURN TO SURFACE</button>
         </div>
       </div>
     `;
@@ -106,48 +106,43 @@ export class WorkshopModal {
     const meta = economy.meta;
     this.shardsVal.textContent = economy.coreShards;
 
-    // Base Energy
     const energyCost = economy.getMetaCost('baseEnergy');
     this.metaLvlBaseEnergy.textContent = meta.baseEnergy;
     this.metaCostBaseEnergy.textContent = energyCost;
     this.btnMetaBaseEnergy.disabled = economy.coreShards < energyCost;
 
-    // Base HP
     const hpCost = economy.getMetaCost('baseHp');
     this.metaLvlBaseHp.textContent = meta.baseHp;
     this.metaCostBaseHp.textContent = hpCost;
     this.btnMetaBaseHp.disabled = economy.coreShards < hpCost;
 
-    // Base Damage
     const damageCost = economy.getMetaCost('baseDamage');
     this.metaLvlBaseDamage.textContent = meta.baseDamage;
     this.metaCostBaseDamage.textContent = damageCost;
     this.btnMetaBaseDamage.disabled = economy.coreShards < damageCost;
 
-    // Tesla
     if (meta.unlockTesla) {
       this.metaStatusTesla.textContent = 'INSTALLED';
-      this.metaStatusTesla.style.color = '#00ff88';
+      this.metaStatusTesla.style.color = 'var(--emerald-glow)';
       this.btnMetaUnlockTesla.disabled = true;
       this.btnMetaUnlockTesla.textContent = 'PURCHASED';
     } else {
       this.metaStatusTesla.textContent = 'LOCKED';
-      this.metaStatusTesla.style.color = '#ffd000';
+      this.metaStatusTesla.style.color = 'var(--gold-base)';
       this.btnMetaUnlockTesla.disabled = economy.coreShards < 40;
-      this.btnMetaUnlockTesla.textContent = 'UNLOCK (40 SHARDS)';
+      this.btnMetaUnlockTesla.textContent = 'UNLOCK (40 E)';
     }
 
-    // Cryo
     if (meta.unlockCryo) {
       this.metaStatusCryo.textContent = 'INSTALLED';
-      this.metaStatusCryo.style.color = '#00ff88';
+      this.metaStatusCryo.style.color = 'var(--emerald-glow)';
       this.btnMetaUnlockCryo.disabled = true;
       this.btnMetaUnlockCryo.textContent = 'PURCHASED';
     } else {
       this.metaStatusCryo.textContent = 'LOCKED';
-      this.metaStatusCryo.style.color = '#ffd000';
+      this.metaStatusCryo.style.color = 'var(--gold-base)';
       this.btnMetaUnlockCryo.disabled = economy.coreShards < 50;
-      this.btnMetaUnlockCryo.textContent = 'UNLOCK (50 SHARDS)';
+      this.btnMetaUnlockCryo.textContent = 'UNLOCK (50 E)';
     }
   }
 
