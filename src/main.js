@@ -7,6 +7,8 @@ import { Core } from './core/Core.js';
 import { Turret } from './entities/Turret.js';
 import { TeslaCoil } from './entities/TeslaCoil.js';
 import { CryoField } from './entities/CryoField.js';
+import { GolemGuard } from './entities/GolemGuard.js';
+import { TNTBlock } from './entities/TNTBlock.js';
 import { WaveManager } from './systems/Waves.js';
 import { Economy } from './systems/Economy.js';
 import { AudioManager } from './systems/Audio.js';
@@ -37,22 +39,27 @@ let core;
 let turret;
 let teslaCoil = null;
 let cryoField = null;
+let golemGuards = [];
+let tntBlocks = [];
 let economy = new Economy();
 let waveManager;
 let bullets = [];
 let floatingTexts = [];
 
-// Throttled UI timer to completely eliminate DOM reflow lag
-let uiSyncTimer = 0;
-const UI_SYNC_INTERVAL = 0.1; // 10 updates per second instead of 60fps
+// Boss HUD Elements
+const bossHud = document.getElementById('boss-hud-bar');
+const bossHpFill = document.getElementById('boss-hp-fill');
+const bossName = document.getElementById('boss-name');
 
-const MAX_FLOATING_TEXTS = 30;
+let uiSyncTimer = 0;
+const UI_SYNC_INTERVAL = 0.1;
+const MAX_FLOATING_TEXTS = 35;
 
 function resizeCanvas() {
   const container = document.getElementById('canvas-container');
   if (!container) return;
 
-  dpr = Math.min(window.devicePixelRatio || 1, 2); // Cap at 2x to save GPU
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
   logicalWidth = container.clientWidth;
   logicalHeight = container.clientHeight;
 
@@ -122,10 +129,6 @@ export function addFloatingText(x, y, text, color = '#ffffff', isCritical = fals
   });
 }
 
-export function createExplosion(worldX, worldY, worldZ = 12, color = '#d61c1c', count = 16, isHeavy = false) {
-  particleSystem.emitExplosion(worldX, worldY, worldZ, color, count, isHeavy);
-}
-
 function handleBuyInRunUpgrade(type) {
   if (economy.buyUpgrade(type)) {
     audio.playAnvil();
@@ -142,6 +145,10 @@ function handleBuyInRunUpgrade(type) {
       const baseHp = CONFIG.CORE.BASE_HP + economy.meta.baseHp * CONFIG.CORE.HP_PER_META_LEVEL;
       core.maxHp = Math.round(baseHp * Math.pow(1.25, economy.upgrades.health - 1));
       core.heal(core.maxHp - oldMax);
+    } else if (type === 'golem') {
+      // Spawn an Iron Golem Bouncer
+      const orbitOffset = (golemGuards.length * Math.PI * 2) / 3;
+      golemGuards.push(new GolemGuard(orbitOffset));
     }
     syncAllUI();
   }
@@ -255,6 +262,16 @@ function syncAllUI() {
   });
 
   workshopModal.update(economy);
+
+  // Boss bar synchronization
+  if (waveManager && waveManager.activeBoss && !waveManager.activeBoss.isDead()) {
+    bossHud.classList.remove('hidden');
+    const boss = waveManager.activeBoss;
+    const hpPct = Math.max(0, (boss.hp / boss.maxHp) * 100);
+    bossHpFill.style.width = `${hpPct}%`;
+  } else {
+    bossHud.classList.add('hidden');
+  }
 }
 
 function initGame() {
@@ -278,6 +295,8 @@ function initGame() {
 
   teslaCoil = economy.meta.unlockTesla ? new TeslaCoil(0, 0) : null;
   cryoField = economy.meta.unlockCryo ? new CryoField(0, 0) : null;
+  golemGuards.length = 0;
+  tntBlocks.length = 0;
 
   waveManager = new WaveManager();
 
@@ -286,6 +305,7 @@ function initGame() {
 
   gameOverModal.hide();
   workshopModal.hide();
+  bossHud.classList.add('hidden');
 
   syncAllUI();
   crazySdk.gameplayStart();
@@ -328,7 +348,7 @@ function handleGameOver() {
   });
 }
 
-// User Strike: TNT Orbital Drop with fast squared distance test
+// User Strike: 3D Dropping TNT Block
 canvas.addEventListener('pointerdown', (e) => {
   if (gameState.isGameOver || gameState.isPaused) return;
   audio.init();
@@ -340,37 +360,40 @@ canvas.addEventListener('pointerdown', (e) => {
   const screenClickX = (e.clientX - rect.left) * scaleX;
   const screenClickY = (e.clientY - rect.top) * scaleY;
 
-  const originX = logicalWidth / 2;
-  const originY = logicalHeight / 2 + 30;
+  const originX = logicalWidth * 0.5;
+  const originY = logicalHeight * 0.5 + 30;
 
   const worldPos = Isometric.screenToWorld(screenClickX, screenClickY, originX, originY, 0);
 
-  audio.playTNTExplosion(true);
-  triggerScreenShake(8);
+  // Drop 3D TNT block
+  tntBlocks.push(new TNTBlock(worldPos.x, worldPos.y, (tx, ty) => {
+    audio.playTNTExplosion(true);
+    triggerScreenShake(10);
+    particleSystem.emitShockwave(tx, ty, CONFIG.STRIKE.RADIUS, '#d61c1c');
+    particleSystem.emitExplosion(tx, ty, 6, '#d62828', 24, true);
 
-  particleSystem.emitShockwave(worldPos.x, worldPos.y, CONFIG.STRIKE.RADIUS, '#d61c1c');
+    const strikeDamage = Math.round(turret.damage * CONFIG.STRIKE.DAMAGE_FACTOR * 1.3);
+    const strikeRadiusSq = CONFIG.STRIKE.RADIUS * CONFIG.STRIKE.RADIUS;
 
-  const strikeDamage = Math.round(turret.damage * CONFIG.STRIKE.DAMAGE_FACTOR);
-  const strikeRadiusSq = CONFIG.STRIKE.RADIUS * CONFIG.STRIKE.RADIUS;
+    for (let i = 0; i < waveManager.enemies.length; i++) {
+      const enemy = waveManager.enemies[i];
+      const dx = enemy.x - tx;
+      const dy = enemy.y - ty;
 
-  for (let i = 0; i < waveManager.enemies.length; i++) {
-    const enemy = waveManager.enemies[i];
-    const dx = enemy.x - worldPos.x;
-    const dy = enemy.y - worldPos.y;
+      if (dx * dx + dy * dy < strikeRadiusSq) {
+        enemy.takeDamage(strikeDamage);
+        audio.playMobDamage(enemy.type === 'brute' || enemy.type === 'boss');
 
-    if (dx * dx + dy * dy < strikeRadiusSq) {
-      enemy.takeDamage(strikeDamage);
-      audio.playMobDamage(enemy.type === 'brute');
+        const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, enemy.height + 4, originX, originY);
+        addFloatingText(enemyScreen.x, enemyScreen.y, `-${strikeDamage}`, '#ff3838', true);
+        particleSystem.emitSparks(enemy.x, enemy.y, enemy.height, '#d61c1c', 8);
 
-      const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, enemy.height + 4, originX, originY);
-      addFloatingText(enemyScreen.x, enemyScreen.y, `-${strikeDamage}`, '#ff3838', true);
-      particleSystem.emitSparks(enemy.x, enemy.y, enemy.height, '#d61c1c', 8);
-
-      const angle = Math.atan2(dy, dx);
-      enemy.x += Math.cos(angle) * CONFIG.STRIKE.KNOCKBACK;
-      enemy.y += Math.sin(angle) * CONFIG.STRIKE.KNOCKBACK;
+        const angle = Math.atan2(dy, dx);
+        enemy.x += Math.cos(angle) * CONFIG.STRIKE.KNOCKBACK * 1.5;
+        enemy.y += Math.sin(angle) * CONFIG.STRIKE.KNOCKBACK * 1.5;
+      }
     }
-  }
+  }));
 });
 
 // Physics & State Pipeline
@@ -382,52 +405,114 @@ function update(dt, timestamp) {
     core.update(dt);
     particleSystem.update(dt);
 
-    const originX = logicalWidth / 2;
-    const originY = logicalHeight / 2 + 30;
+    const originX = logicalWidth * 0.5;
+    const originY = logicalHeight * 0.5 + 30;
 
-    if (cryoField) cryoField.update(dt, waveManager.enemies);
-    waveManager.update(dt, logicalWidth, logicalHeight, core);
-    turret.update(dt, waveManager.enemies, bullets);
+    // Soul Frost expansion: emit blue soul fire embers
+    if (cryoField) {
+      cryoField.update(dt, waveManager.enemies);
+      if (Math.random() < 0.2) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = Math.random() * cryoField.radius;
+        particleSystem.emitSparks(Math.cos(angle) * dist, Math.sin(angle) * dist, 4, '#32d6d6', 2);
+      }
+    }
+
+    // Update Wave Manager with mob hooks
+    waveManager.update(
+      dt, logicalWidth, logicalHeight, core, bullets,
+      (creeper) => {
+        // Creeper detonation callback
+        audio.playTNTExplosion(true);
+        triggerScreenShake(9);
+        particleSystem.emitExplosion(creeper.x, creeper.y, creeper.height, '#52b788', 22, true);
+        particleSystem.emitShockwave(creeper.x, creeper.y, 60, '#ff4444');
+        core.takeDamage(creeper.damage);
+        addFloatingText(0, -20, `-${creeper.damage} HP`, '#ff0000', true);
+        if (core.isDestroyed()) handleGameOver();
+      },
+      audio
+    );
+
+    // Turret with Multishot support
+    turret.update(dt, waveManager.enemies, bullets, economy.meta.multishot);
+
     if (teslaCoil) teslaCoil.update(dt, waveManager.enemies);
 
-    // Update 3D Arrow Projectiles
+    // Golem Guards
+    for (let i = 0; i < golemGuards.length; i++) {
+      golemGuards[i].update(dt, waveManager.enemies, audio, (enemy, dmg) => {
+        const eScreen = Isometric.worldToScreen(enemy.x, enemy.y, enemy.height + 4, originX, originY);
+        addFloatingText(eScreen.x, eScreen.y, `-${dmg}`, '#ffffff');
+        particleSystem.emitSparks(enemy.x, enemy.y, enemy.height, '#ced4da', 6);
+      });
+    }
+
+    // 3D TNT Blocks
+    for (let i = tntBlocks.length - 1; i >= 0; i--) {
+      const tnt = tntBlocks[i];
+      tnt.update(dt);
+      if (tnt.detonated) {
+        const last = tntBlocks.pop();
+        if (i < tntBlocks.length) tntBlocks[i] = last;
+      }
+    }
+
+    // Projectiles
+    const eLen = waveManager.enemies.length;
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
       b.update(dt);
 
       let hit = false;
       const bRad = b.radius;
-      for (let j = 0; j < waveManager.enemies.length; j++) {
-        const enemy = waveManager.enemies[j];
-        const dx = b.x - enemy.x;
-        const dy = b.y - enemy.y;
-        const rSum = bRad + enemy.radius;
 
-        if (dx * dx + dy * dy < rSum * rSum && b.z <= enemy.height + 10 && b.z >= 0) {
-          enemy.takeDamage(b.damage);
-          audio.playMobDamage(enemy.type === 'brute');
-
-          const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, b.z, originX, originY);
-          addFloatingText(enemyScreen.x, enemyScreen.y, `-${b.damage}`, '#ff4444');
-          particleSystem.emitSparks(b.x, b.y, b.z, '#8f5c2c', 6, b.angle + Math.PI);
+      // Enemy skeleton arrows hitting Core
+      if (b.isEnemyBullet) {
+        const dx = b.x - core.x;
+        const dy = b.y - core.y;
+        if (dx * dx + dy * dy < core.radius * core.radius && b.z <= 40) {
+          core.takeDamage(b.damage);
+          audio.playImpact();
+          triggerScreenShake(4);
+          addFloatingText(0, -20, `-${b.damage} HP`, '#ff5555');
           hit = true;
-          break;
+        }
+      } else {
+        // Player arrows hitting mobs
+        for (let j = 0; j < eLen; j++) {
+          const enemy = waveManager.enemies[j];
+          const dx = b.x - enemy.x;
+          const dy = b.y - enemy.y;
+          const rSum = bRad + enemy.radius;
+
+          if (dx * dx + dy * dy < rSum * rSum && b.z <= enemy.height + 10 && b.z >= 0) {
+            enemy.takeDamage(b.damage);
+
+            // Flame I Enchantment: ignite mob
+            if (economy.meta.flame) {
+              enemy.applyBurn(3.0);
+            }
+
+            audio.playMobDamage(enemy.type === 'brute' || enemy.type === 'boss');
+
+            const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, b.z, originX, originY);
+            addFloatingText(enemyScreen.x, enemyScreen.y, `-${b.damage}`, economy.meta.flame ? '#ff9900' : '#ff4444');
+            particleSystem.emitSparks(b.x, b.y, b.z, '#8f5c2c', 6, b.angle + Math.PI);
+            hit = true;
+            break;
+          }
         }
       }
 
       if (hit || b.isOffscreen()) {
-        if (!hit && b.z <= 0) {
-          audio.playImpact();
-        }
-        // Fast swap-and-pop removal
+        if (!hit && b.z <= 0) audio.playImpact();
         const lastBullet = bullets.pop();
-        if (i < bullets.length) {
-          bullets[i] = lastBullet;
-        }
+        if (i < bullets.length) bullets[i] = lastBullet;
       }
     }
 
-    // Enemies
+    // Mob Core Contact & Elimination
     const coreR = core.radius;
     for (let i = waveManager.enemies.length - 1; i >= 0; i--) {
       const enemy = waveManager.enemies[i];
@@ -436,20 +521,26 @@ function update(dt, timestamp) {
 
       if (distSq < rSum * rSum) {
         core.takeDamage(enemy.damage);
-        const isBrute = enemy.type === 'brute';
-        audio.playTNTExplosion(isBrute);
-        triggerScreenShake(isBrute ? 12 : 7);
+
+        // Thorns Enchantment: reflect damage back to attacking mob
+        if (economy.meta.thorns) {
+          const reflectDmg = Math.round(enemy.damage * 0.75);
+          enemy.takeDamage(reflectDmg);
+          const eScreen = Isometric.worldToScreen(enemy.x, enemy.y, enemy.height, originX, originY);
+          addFloatingText(eScreen.x, eScreen.y, `THORNS -${reflectDmg}`, '#55ff55');
+        }
+
+        const isHeavy = enemy.type === 'brute' || enemy.type === 'boss';
+        audio.playTNTExplosion(isHeavy);
+        triggerScreenShake(isHeavy ? 14 : 7);
 
         const coreScreen = Isometric.worldToScreen(core.x, core.y, 35, originX, originY);
-        particleSystem.emitExplosion(enemy.x, enemy.y, enemy.height, '#707070', 20, isBrute);
+        particleSystem.emitExplosion(enemy.x, enemy.y, enemy.height, '#707070', 20, isHeavy);
         particleSystem.emitShockwave(core.x, core.y, 40, '#d61c1c');
         addFloatingText(coreScreen.x, coreScreen.y - 15, `-${enemy.damage} HP`, '#ff3838', true);
-        
-        // Remove enemy with swap and pop
+
         const lastEnemy = waveManager.enemies.pop();
-        if (i < waveManager.enemies.length) {
-          waveManager.enemies[i] = lastEnemy;
-        }
+        if (i < waveManager.enemies.length) waveManager.enemies[i] = lastEnemy;
 
         if (core.isDestroyed()) {
           handleGameOver();
@@ -459,24 +550,21 @@ function update(dt, timestamp) {
       }
 
       if (enemy.isDead()) {
-        const isBrute = enemy.type === 'brute';
+        const isHeavy = enemy.type === 'brute' || enemy.type === 'boss';
         economy.addEnergy(enemy.reward);
         gameState.kills++;
-        audio.playMobDamage(isBrute);
-        if (isBrute) triggerScreenShake(6);
+        audio.playMobDamage(isHeavy);
+        if (isHeavy) triggerScreenShake(6);
 
         const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, enemy.height, originX, originY);
-        addFloatingText(enemyScreen.x, enemyScreen.y - 10, `+${enemy.reward} R`, '#d61c1c', isBrute);
-        particleSystem.emitExplosion(enemy.x, enemy.y, enemy.height, enemy.accentColor, 16, isBrute);
+        addFloatingText(enemyScreen.x, enemyScreen.y - 10, `+${enemy.reward} R`, '#d61c1c', isHeavy);
+        particleSystem.emitExplosion(enemy.x, enemy.y, enemy.height, enemy.accentColor, 16, isHeavy);
 
         const lastEnemy = waveManager.enemies.pop();
-        if (i < waveManager.enemies.length) {
-          waveManager.enemies[i] = lastEnemy;
-        }
+        if (i < waveManager.enemies.length) waveManager.enemies[i] = lastEnemy;
       }
     }
 
-    // Throttled UI update (10 updates per second) prevents main thread freezing
     uiSyncTimer += dt;
     if (uiSyncTimer >= UI_SYNC_INTERVAL) {
       uiSyncTimer = 0;
@@ -503,7 +591,9 @@ function render(dt, timestamp) {
     waveManager,
     bullets,
     particleSystem,
-    floatingTexts
+    floatingTexts,
+    golemGuards,
+    tntBlocks
   });
 
   const renderTime = performance.now() - frameStart;
