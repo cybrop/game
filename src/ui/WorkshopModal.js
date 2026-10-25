@@ -11,12 +11,12 @@ export class WorkshopModal {
     this.container.innerHTML = `
       <div class="modal-box workshop-box">
         <div class="workshop-header">
-          <h1 class="ore-gold">ANVIL & WORKSHOP</h1>
+          <h1 class="ore-gold">ANVIL & ENCHANTED WORKSHOP</h1>
           <div class="workshop-shards-counter">
             EMERALDS: <span id="workshop-shards-val" class="ore-emerald">0</span>
           </div>
         </div>
-        <p class="workshop-desc">Forge permanent Netherite and enchanted gear that persist across every respawn.</p>
+        <p class="workshop-desc">Forge permanent Netherite armor and enchanted books that persist across every respawn.</p>
         <div class="workshop-grid">
           <div class="meta-card">
             <div class="meta-title">Redstone Capacitors</div>
@@ -62,6 +62,46 @@ export class WorkshopModal {
               UNLOCK (50 E)
             </button>
           </div>
+
+          <!-- Enchantment: Multishot -->
+          <div class="meta-card">
+            <div class="meta-title">Enchanted Book: Multishot</div>
+            <div class="meta-desc">Dispenser fires a 3-arrow spread cone simultaneously</div>
+            <div class="meta-level"><span id="meta-status-multishot">LOCKED</span></div>
+            <button class="upgrade-btn" id="btn-meta-multishot">
+              ENCHANT (35 E)
+            </button>
+          </div>
+
+          <!-- Enchantment: Flame I -->
+          <div class="meta-card">
+            <div class="meta-title">Enchanted Book: Flame I</div>
+            <div class="meta-desc">Arrows ignite monsters for continuous fire damage</div>
+            <div class="meta-level"><span id="meta-status-flame">LOCKED</span></div>
+            <button class="upgrade-btn" id="btn-meta-flame">
+              ENCHANT (45 E)
+            </button>
+          </div>
+
+          <!-- Enchantment: Thorns -->
+          <div class="meta-card">
+            <div class="meta-title">Enchanted Book: Thorns</div>
+            <div class="meta-desc">Beacon reflects damage back onto monsters on contact</div>
+            <div class="meta-level"><span id="meta-status-thorns">LOCKED</span></div>
+            <button class="upgrade-btn" id="btn-meta-thorns">
+              ENCHANT (30 E)
+            </button>
+          </div>
+
+          <!-- Enchantment: Fortune -->
+          <div class="meta-card">
+            <div class="meta-title">Enchanted Book: Fortune III</div>
+            <div class="meta-desc">+40% Emerald bonus upon surviving waves and raids</div>
+            <div class="meta-level"><span id="meta-status-fortune">LOCKED</span></div>
+            <button class="upgrade-btn" id="btn-meta-fortune">
+              ENCHANT (40 E)
+            </button>
+          </div>
         </div>
         <div class="workshop-footer">
           <button id="close-workshop-btn" class="action-btn">RETURN TO SURFACE</button>
@@ -91,6 +131,18 @@ export class WorkshopModal {
 
     this.metaStatusCryo = document.getElementById('meta-status-cryo');
     this.btnMetaUnlockCryo = document.getElementById('btn-meta-unlockCryo');
+
+    this.metaStatusMultishot = document.getElementById('meta-status-multishot');
+    this.btnMetaMultishot = document.getElementById('btn-meta-multishot');
+
+    this.metaStatusFlame = document.getElementById('meta-status-flame');
+    this.btnMetaFlame = document.getElementById('btn-meta-flame');
+
+    this.metaStatusThorns = document.getElementById('meta-status-thorns');
+    this.btnMetaThorns = document.getElementById('btn-meta-thorns');
+
+    this.metaStatusFortune = document.getElementById('meta-status-fortune');
+    this.btnMetaFortune = document.getElementById('btn-meta-fortune');
   }
 
   attachEvents() {
@@ -100,6 +152,11 @@ export class WorkshopModal {
     this.btnMetaBaseDamage.addEventListener('click', () => this.options.onBuyMeta?.('baseDamage'));
     this.btnMetaUnlockTesla.addEventListener('click', () => this.options.onBuyMeta?.('unlockTesla'));
     this.btnMetaUnlockCryo.addEventListener('click', () => this.options.onBuyMeta?.('unlockCryo'));
+
+    this.btnMetaMultishot.addEventListener('click', () => this.options.onBuyMeta?.('multishot'));
+    this.btnMetaFlame.addEventListener('click', () => this.options.onBuyMeta?.('flame'));
+    this.btnMetaThorns.addEventListener('click', () => this.options.onBuyMeta?.('thorns'));
+    this.btnMetaFortune.addEventListener('click', () => this.options.onBuyMeta?.('fortune'));
   }
 
   update(economy) {
@@ -121,36 +178,28 @@ export class WorkshopModal {
     this.metaCostBaseDamage.textContent = damageCost;
     this.btnMetaBaseDamage.disabled = economy.coreShards < damageCost;
 
-    if (meta.unlockTesla) {
-      this.metaStatusTesla.textContent = 'INSTALLED';
-      this.metaStatusTesla.style.color = 'var(--emerald-glow)';
-      this.btnMetaUnlockTesla.disabled = true;
-      this.btnMetaUnlockTesla.textContent = 'PURCHASED';
-    } else {
-      this.metaStatusTesla.textContent = 'LOCKED';
-      this.metaStatusTesla.style.color = 'var(--gold-base)';
-      this.btnMetaUnlockTesla.disabled = economy.coreShards < 40;
-      this.btnMetaUnlockTesla.textContent = 'UNLOCK (40 E)';
-    }
+    this.updateToggleBadge(this.metaStatusTesla, this.btnMetaUnlockTesla, meta.unlockTesla, 40, economy.coreShards, 'UNLOCK (40 E)');
+    this.updateToggleBadge(this.metaStatusCryo, this.btnMetaUnlockCryo, meta.unlockCryo, 50, economy.coreShards, 'UNLOCK (50 E)');
+    this.updateToggleBadge(this.metaStatusMultishot, this.btnMetaMultishot, meta.multishot, 35, economy.coreShards, 'ENCHANT (35 E)');
+    this.updateToggleBadge(this.metaStatusFlame, this.btnMetaFlame, meta.flame, 45, economy.coreShards, 'ENCHANT (45 E)');
+    this.updateToggleBadge(this.metaStatusThorns, this.btnMetaThorns, meta.thorns, 30, economy.coreShards, 'ENCHANT (30 E)');
+    this.updateToggleBadge(this.metaStatusFortune, this.btnMetaFortune, meta.fortune, 40, economy.coreShards, 'ENCHANT (40 E)');
+  }
 
-    if (meta.unlockCryo) {
-      this.metaStatusCryo.textContent = 'INSTALLED';
-      this.metaStatusCryo.style.color = 'var(--emerald-glow)';
-      this.btnMetaUnlockCryo.disabled = true;
-      this.btnMetaUnlockCryo.textContent = 'PURCHASED';
+  updateToggleBadge(statusEl, btnEl, isUnlocked, cost, shards, defaultText) {
+    if (isUnlocked) {
+      statusEl.textContent = 'INSTALLED';
+      statusEl.style.color = 'var(--emerald-glow)';
+      btnEl.disabled = true;
+      btnEl.textContent = 'FORGED';
     } else {
-      this.metaStatusCryo.textContent = 'LOCKED';
-      this.metaStatusCryo.style.color = 'var(--gold-base)';
-      this.btnMetaUnlockCryo.disabled = economy.coreShards < 50;
-      this.btnMetaUnlockCryo.textContent = 'UNLOCK (50 E)';
+      statusEl.textContent = 'LOCKED';
+      statusEl.style.color = 'var(--gold-base)';
+      btnEl.disabled = shards < cost;
+      btnEl.textContent = defaultText;
     }
   }
 
-  show() {
-    this.container.classList.remove('hidden');
-  }
-
-  hide() {
-    this.container.classList.add('hidden');
-  }
+  show() { this.container.classList.remove('hidden'); }
+  hide() { this.container.classList.add('hidden'); }
 }
