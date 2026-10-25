@@ -1,5 +1,5 @@
 export class StorageManager {
-  static KEY = 'core_extractor_save';
+  static KEY = 'core_extractor_save_v1';
 
   static save(data) {
     try {
