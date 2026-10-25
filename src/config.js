@@ -32,6 +32,20 @@ export const CONFIG = {
     TICK_INTERVAL: 0.5,
     UNLOCK_COST: 50
   },
+  GOLEM_GUARD: {
+    BASE_COST: 60,
+    DAMAGE: 35,
+    KNOCKBACK: 36,
+    PATROL_RADIUS: 85,
+    SPEED: 65,
+    ATTACK_COOLDOWN: 0.8
+  },
+  ENCHANTMENTS: {
+    MULTISHOT_COST: 35,
+    FLAME_COST: 45,
+    THORNS_COST: 30,
+    FORTUNE_COST: 40
+  },
   ECONOMY: {
     START_ENERGY: 50,
     BASE_RATE: 5,
@@ -41,13 +55,15 @@ export const CONFIG = {
       damage: 25,
       firerate: 35,
       health: 40,
-      yield: 30
+      yield: 30,
+      golem: 60
     },
     UPGRADE_MULTIPLIERS: {
       damage: 1.45,
       firerate: 1.55,
       health: 1.4,
-      yield: 1.5
+      yield: 1.5,
+      golem: 1.6
     },
     META_COSTS: {
       baseEnergy: { base: 10, multiplier: 1.6 },
@@ -59,7 +75,7 @@ export const CONFIG = {
     INITIAL_COUNT: 8,
     COUNT_PER_WAVE: 4,
     SPAWN_INTERVAL_BASE: 1.1,
-    SPAWN_INTERVAL_MIN: 0.4,
+    SPAWN_INTERVAL_MIN: 0.35,
     INTERMISSION_TIME: 3.0
   },
   STRIKE: {
