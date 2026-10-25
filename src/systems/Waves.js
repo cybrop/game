@@ -37,8 +37,10 @@ export class WaveManager {
       this.intermissionTimer = 3.0;
     }
 
+    const coreX = core.x;
+    const coreY = core.y;
     for (let i = 0; i < this.enemies.length; i++) {
-      this.enemies[i].update(dt, core.x, core.y);
+      this.enemies[i].update(dt, coreX, coreY);
     }
   }
 
