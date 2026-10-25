@@ -269,7 +269,6 @@ function initGame() {
   const baseHp = CONFIG.CORE.BASE_HP + economy.meta.baseHp * CONFIG.CORE.HP_PER_META_LEVEL;
   const baseDamage = CONFIG.TURRET.BASE_DAMAGE + economy.meta.baseDamage * CONFIG.TURRET.DAMAGE_PER_META_LEVEL;
 
-  // In Isometric coordinate space, Core is situated at ground origin (0, 0)
   core = new Core(0, 0, baseHp);
   turret = new Turret(0, 0, baseDamage);
 
@@ -339,7 +338,6 @@ canvas.addEventListener('pointerdown', (e) => {
   const originX = logicalWidth / 2;
   const originY = logicalHeight / 2 + 30;
 
-  // Map 2D screen coordinate to 2.5D World ground coordinate
   const worldPos = Isometric.screenToWorld(screenClickX, screenClickY, originX, originY, 0);
 
   audio.playShockwave();
@@ -358,7 +356,7 @@ canvas.addEventListener('pointerdown', (e) => {
     const dist = Math.hypot(enemy.x - worldPos.x, enemy.y - worldPos.y);
     if (dist < CONFIG.STRIKE.RADIUS) {
       enemy.takeDamage(strikeDamage);
-      const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, 16, originX, originY);
+      const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, enemy.height + 4, originX, originY);
       addFloatingText(enemyScreen.x, enemyScreen.y, `-${strikeDamage}`, '#00ffcc', true);
       createExplosion(enemyScreen.x, enemyScreen.y, '#00f3ff', 8);
 
@@ -385,7 +383,7 @@ function update(dt, timestamp) {
     turret.update(dt, waveManager.enemies, bullets);
     if (teslaCoil) teslaCoil.update(dt, waveManager.enemies);
 
-    // Bullets
+    // Update 3D Projectiles
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
       b.update(dt);
@@ -393,12 +391,15 @@ function update(dt, timestamp) {
       let hit = false;
       for (let j = 0; j < waveManager.enemies.length; j++) {
         const enemy = waveManager.enemies[j];
-        const dist = Math.hypot(b.x - enemy.x, b.y - enemy.y);
-        if (dist < b.radius + enemy.radius) {
+        const dist2D = Math.hypot(b.x - enemy.x, b.y - enemy.y);
+        // 3D Collision volume check
+        const heightMatch = b.z <= enemy.height + 8 && b.z >= 0;
+
+        if (dist2D < b.radius + enemy.radius && heightMatch) {
           enemy.takeDamage(b.damage);
           audio.playImpact();
 
-          const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, 14, originX, originY);
+          const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, b.z, originX, originY);
           addFloatingText(enemyScreen.x, enemyScreen.y, `-${b.damage}`, '#ff0077');
           createExplosion(enemyScreen.x, enemyScreen.y, '#00f3ff', 6);
           hit = true;
@@ -406,7 +407,7 @@ function update(dt, timestamp) {
         }
       }
 
-      if (hit || b.isOffscreen(logicalWidth, logicalHeight)) {
+      if (hit || b.isOffscreen()) {
         bullets.splice(i, 1);
       }
     }
@@ -422,8 +423,8 @@ function update(dt, timestamp) {
         audio.playExplosion(isBrute);
         triggerScreenShake(isBrute ? 12 : 7);
 
-        const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, 12, originX, originY);
-        const coreScreen = Isometric.worldToScreen(core.x, core.y, 25, originX, originY);
+        const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, enemy.height, originX, originY);
+        const coreScreen = Isometric.worldToScreen(core.x, core.y, 35, originX, originY);
 
         createExplosion(enemyScreen.x, enemyScreen.y, '#ff3344', 20, isBrute);
         addFloatingText(coreScreen.x, coreScreen.y - 15, `-${enemy.damage} HP`, '#ff3344', true);
@@ -443,7 +444,7 @@ function update(dt, timestamp) {
         audio.playExplosion(isBrute);
         if (isBrute) triggerScreenShake(6);
 
-        const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, 14, originX, originY);
+        const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, enemy.height, originX, originY);
         addFloatingText(enemyScreen.x, enemyScreen.y - 10, `+${enemy.reward}E`, '#ffd000', isBrute);
         createExplosion(enemyScreen.x, enemyScreen.y, enemy.accentColor, 16, isBrute);
         waveManager.enemies.splice(i, 1);
