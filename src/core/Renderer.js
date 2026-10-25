@@ -2,8 +2,6 @@ import { Isometric } from './Isometric.js';
 
 /**
  * Multi-pass 2.5D Isometric Render Pipeline
- * Features cached offscreen voxel terrain, pre-rendered redstone wire conduits,
- * and zero-allocation depth sorting.
  */
 export class Renderer {
   constructor(canvas, ctx) {
@@ -11,14 +9,12 @@ export class Renderer {
     this.ctx = ctx;
     this.redstonePulseTime = 0;
 
-    // Offscreen cached terrain canvas to eliminate ~500 draw calls per frame
     this.terrainCanvas = document.createElement('canvas');
     this.terrainCtx = this.terrainCanvas.getContext('2d');
     this.cachedWidth = 0;
     this.cachedHeight = 0;
     this.cachedDpr = 0;
 
-    // Reusable draw list to eliminate garbage collection allocations
     this.drawQueue = [];
     this.currentCore = null;
     this.currentTurret = null;
@@ -54,7 +50,9 @@ export class Renderer {
     waveManager,
     bullets,
     particleSystem,
-    floatingTexts
+    floatingTexts,
+    golemGuards = [],
+    tntBlocks = []
   }) {
     const ctx = this.ctx;
     const originX = logicalWidth * 0.5;
@@ -65,18 +63,14 @@ export class Renderer {
     ctx.translate(shake.offsetX, shake.offsetY);
     ctx.clearRect(-40, -40, logicalWidth + 80, logicalHeight + 80);
 
-    // ==========================================
-    // Pass 1: Blit Cached Voxel Terrain
-    // ==========================================
+    // Pass 1: Blit Cached Voxel Terrain & Redstone Pulses
     if (this.cachedWidth !== logicalWidth || this.cachedHeight !== logicalHeight || this.cachedDpr !== dpr) {
       this.updateTerrainCache(dpr, logicalWidth, logicalHeight, originX, originY);
     }
     ctx.drawImage(this.terrainCanvas, 0, 0, logicalWidth, logicalHeight);
     this.renderRedstonePulses(ctx, originX, originY, dt, energyRate);
 
-    // ==========================================
-    // Pass 2: Field Auras & Ground-Level FX
-    // ==========================================
+    // Pass 2: Field Auras & Ground FX
     if (cryoField) {
       this.renderSoulFrostAura(ctx, cryoField, originX, originY);
     }
@@ -84,14 +78,15 @@ export class Renderer {
       particleSystem.drawGroundFX(ctx, originX, originY);
     }
 
-    // ==========================================
-    // Pass 3: Depth-Sorted Voxel Entities & 3D Projectiles
-    // ==========================================
-    this.renderDepthSortedEntities(ctx, originX, originY, core, turret, teslaCoil, waveManager.enemies, bullets);
+    // Pass 3: Depth-Sorted Entities, Mobs, Guards & 3D Projectiles
+    this.renderDepthSortedEntities(
+      ctx, originX, originY,
+      core, turret, teslaCoil,
+      waveManager.enemies, bullets,
+      golemGuards, tntBlocks
+    );
 
-    // ==========================================
-    // Pass 4: Airborne Voxel Particles & Combat Text
-    // ==========================================
+    // Pass 4: Airborne 3D Particles & Combat Text
     if (particleSystem) {
       particleSystem.drawAirborneParticles(ctx, originX, originY);
     }
@@ -123,33 +118,10 @@ export class Renderer {
     const blockSize = 48;
     const halfBlocks = 6;
 
-    const blockColorsA = {
-      top: '#598a35',
-      left: '#4a331c',
-      right: '#362412',
-      stroke: '#281c10'
-    };
-
-    const blockColorsB = {
-      top: '#4e7e2d',
-      left: '#432d18',
-      right: '#30200f',
-      stroke: '#281c10'
-    };
-
-    const stoneBlockColors = {
-      top: '#6e6e73',
-      left: '#545459',
-      right: '#3c3c40',
-      stroke: '#1e1e20'
-    };
-
-    const bedrockColors = {
-      top: '#1b1b1e',
-      left: '#121214',
-      right: '#0b0b0d',
-      stroke: '#050506'
-    };
+    const blockColorsA = { top: '#598a35', left: '#4a331c', right: '#362412', stroke: '#281c10' };
+    const blockColorsB = { top: '#4e7e2d', left: '#432d18', right: '#30200f', stroke: '#281c10' };
+    const stoneBlockColors = { top: '#6e6e73', left: '#545459', right: '#3c3c40', stroke: '#1e1e20' };
+    const bedrockColors = { top: '#1b1b1e', left: '#121214', right: '#0b0b0d', stroke: '#050506' };
 
     for (let gx = -halfBlocks; gx <= halfBlocks; gx++) {
       for (let gy = -halfBlocks; gy <= halfBlocks; gy++) {
@@ -161,7 +133,6 @@ export class Renderer {
 
         const isVariant = (Math.abs(gx + gy)) % 2 === 0;
         const colors = distFromCenter > 4.5 ? stoneBlockColors : (isVariant ? blockColorsA : blockColorsB);
-
         Isometric.drawCube(ctx, wx, wy, -16, blockSize, blockSize, 16, colors, originX, originY);
       }
     }
@@ -268,7 +239,7 @@ export class Renderer {
     ctx.restore();
   }
 
-  renderDepthSortedEntities(ctx, originX, originY, core, turret, teslaCoil, enemies, bullets) {
+  renderDepthSortedEntities(ctx, originX, originY, core, turret, teslaCoil, enemies, bullets, golemGuards, tntBlocks) {
     this.currentCore = core;
     this.currentTurret = turret;
     this.currentTesla = teslaCoil;
@@ -277,24 +248,37 @@ export class Renderer {
     this.coreGroup.depth = core.x + core.y;
     this.drawQueue.push(this.coreGroup);
 
-    const eLen = enemies.length;
-    for (let i = 0; i < eLen; i++) {
+    // Enemies
+    for (let i = 0; i < enemies.length; i++) {
       const enemy = enemies[i];
       enemy.depth = enemy.x + enemy.y;
       this.drawQueue.push(enemy);
     }
 
-    const bLen = bullets.length;
-    for (let i = 0; i < bLen; i++) {
+    // Bullets
+    for (let i = 0; i < bullets.length; i++) {
       const bullet = bullets[i];
       bullet.depth = bullet.x + bullet.y + (bullet.z * 0.05);
       this.drawQueue.push(bullet);
     }
 
+    // Golem Guards
+    for (let i = 0; i < golemGuards.length; i++) {
+      const guard = golemGuards[i];
+      guard.depth = guard.x + guard.y;
+      this.drawQueue.push(guard);
+    }
+
+    // TNT Blocks
+    for (let i = 0; i < tntBlocks.length; i++) {
+      const tnt = tntBlocks[i];
+      tnt.depth = tnt.x + tnt.y + (tnt.z * 0.05);
+      this.drawQueue.push(tnt);
+    }
+
     this.drawQueue.sort((a, b) => a.depth - b.depth);
 
-    const qLen = this.drawQueue.length;
-    for (let i = 0; i < qLen; i++) {
+    for (let i = 0; i < this.drawQueue.length; i++) {
       this.drawQueue[i].draw(ctx, originX, originY);
     }
   }
