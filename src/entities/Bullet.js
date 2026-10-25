@@ -1,20 +1,18 @@
 import { Isometric } from '../core/Isometric.js';
 
-/**
- * 3D Minecraft Arrow Projectile
- */
 export class Bullet {
-  constructor(x, y, startZ, angle, damage, targetDistance = 200) {
+  constructor(x, y, startZ, angle, damage, targetDistance = 200, isEnemyBullet = false) {
     this.x = x;
     this.y = y;
     this.z = startZ;
     this.angle = angle;
     this.damage = damage;
-    this.speed = 460;
+    this.isEnemyBullet = isEnemyBullet;
+    this.speed = isEnemyBullet ? 280 : 460;
     this.radius = 3.5;
 
     const flightTime = Math.max(0.32, targetDistance / this.speed);
-    this.gravity = 115;
+    this.gravity = isEnemyBullet ? 85 : 115;
     this.vz = (0.5 * this.gravity * flightTime) - (startZ / flightTime);
 
     this.vx = Math.cos(this.angle) * this.speed;
@@ -40,7 +38,6 @@ export class Bullet {
   draw(ctx, originX = 0, originY = 0) {
     const screenPos = Isometric.worldToScreen(this.x, this.y, this.z, originX, originY);
 
-    // 1. Derived Floor Shadow Tracking on z = 0 ground plane
     const altitudeScale = Math.max(0.3, 1 - (this.z / 65));
     const shadowY = screenPos.y + this.z;
 
@@ -51,7 +48,6 @@ export class Bullet {
     ctx.fill();
     ctx.restore();
 
-    // 2. 3D Oriented Arrow Body
     const horizSpeed = Math.hypot(this.vx, this.vy);
     const totalSpeed = Math.max(1, Math.hypot(horizSpeed, this.vz));
     const dirX = this.vx / totalSpeed;
@@ -68,24 +64,21 @@ export class Bullet {
     ctx.save();
     ctx.lineCap = 'square';
 
-    // Wooden shaft
+    // Shaft
     ctx.beginPath();
     ctx.moveTo(tailScreen.x, tailScreen.y);
     ctx.lineTo(screenPos.x, screenPos.y);
-    ctx.strokeStyle = '#8f5c2c';
+    ctx.strokeStyle = this.isEnemyBullet ? '#ff6b35' : '#8f5c2c';
     ctx.lineWidth = 2.5;
     ctx.stroke();
 
-    // Flint / Iron Arrowhead at tip
+    // Arrow tip
     ctx.beginPath();
     ctx.arc(screenPos.x, screenPos.y, 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = '#b8bec9';
+    ctx.fillStyle = this.isEnemyBullet ? '#d62828' : '#b8bec9';
     ctx.fill();
-    ctx.strokeStyle = '#3b4252';
-    ctx.lineWidth = 1;
-    ctx.stroke();
 
-    // Feather Fletching
+    // Fletching
     ctx.beginPath();
     ctx.arc(tailScreen.x, tailScreen.y, 2, 0, Math.PI * 2);
     ctx.fillStyle = '#f0f0f0';
