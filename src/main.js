@@ -1,6 +1,8 @@
 import { CONFIG } from './config.js';
 import { GameState } from './core/GameState.js';
 import { GameLoop } from './core/Loop.js';
+import { Isometric } from './core/Isometric.js';
+import { Renderer } from './core/Renderer.js';
 import { Core } from './core/Core.js';
 import { Turret } from './entities/Turret.js';
 import { TeslaCoil } from './entities/TeslaCoil.js';
@@ -23,6 +25,7 @@ const ctx = canvas.getContext('2d');
 export const audio = new AudioManager();
 export const crazySdk = new CrazyGamesSDK();
 export const gameState = new GameState();
+export const renderer = new Renderer(canvas, ctx);
 
 let dpr = 1;
 let logicalWidth = CONFIG.CANVAS.DEFAULT_WIDTH;
@@ -38,9 +41,7 @@ let bullets = [];
 let particles = [];
 let floatingTexts = [];
 let shockwaves = [];
-let veinPulseTime = 0;
 
-// Screen Resize
 function resizeCanvas() {
   const container = document.getElementById('canvas-container');
   if (!container) return;
@@ -51,14 +52,6 @@ function resizeCanvas() {
 
   canvas.width = Math.floor(logicalWidth * dpr);
   canvas.height = Math.floor(logicalHeight * dpr);
-
-  const centerX = logicalWidth / 2;
-  const centerY = logicalHeight / 2;
-
-  if (core) { core.x = centerX; core.y = centerY; }
-  if (turret) { turret.x = centerX; turret.y = centerY; }
-  if (teslaCoil) { teslaCoil.x = centerX; teslaCoil.y = centerY; }
-  if (cryoField) { cryoField.x = centerX; cryoField.y = centerY; }
 }
 
 window.addEventListener('resize', resizeCanvas);
@@ -165,9 +158,9 @@ function handleBuyMetaUpgrade(type) {
     } else if (type === 'baseDamage') {
       turret.damage += CONFIG.TURRET.DAMAGE_PER_META_LEVEL;
     } else if (type === 'unlockTesla' && !teslaCoil) {
-      teslaCoil = new TeslaCoil(logicalWidth / 2, logicalHeight / 2);
+      teslaCoil = new TeslaCoil(0, 0);
     } else if (type === 'unlockCryo' && !cryoField) {
-      cryoField = new CryoField(logicalWidth / 2, logicalHeight / 2);
+      cryoField = new CryoField(0, 0);
     }
     syncAllUI();
   }
@@ -263,8 +256,6 @@ function syncAllUI() {
 
 function initGame() {
   resizeCanvas();
-  const centerX = logicalWidth / 2;
-  const centerY = logicalHeight / 2;
 
   const currentShards = economy.coreShards;
   const currentMeta = { ...economy.meta };
@@ -278,11 +269,12 @@ function initGame() {
   const baseHp = CONFIG.CORE.BASE_HP + economy.meta.baseHp * CONFIG.CORE.HP_PER_META_LEVEL;
   const baseDamage = CONFIG.TURRET.BASE_DAMAGE + economy.meta.baseDamage * CONFIG.TURRET.DAMAGE_PER_META_LEVEL;
 
-  core = new Core(centerX, centerY, baseHp);
-  turret = new Turret(centerX, centerY, baseDamage);
+  // In Isometric coordinate space, Core is situated at ground origin (0, 0)
+  core = new Core(0, 0, baseHp);
+  turret = new Turret(0, 0, baseDamage);
 
-  teslaCoil = economy.meta.unlockTesla ? new TeslaCoil(centerX, centerY) : null;
-  cryoField = economy.meta.unlockCryo ? new CryoField(centerX, centerY) : null;
+  teslaCoil = economy.meta.unlockTesla ? new TeslaCoil(0, 0) : null;
+  cryoField = economy.meta.unlockCryo ? new CryoField(0, 0) : null;
 
   waveManager = new WaveManager();
 
@@ -335,21 +327,27 @@ function handleGameOver() {
   });
 }
 
-// User Strike
+// User Strike using Isometric Inverse Raycast
 canvas.addEventListener('pointerdown', (e) => {
   if (gameState.isGameOver || gameState.isPaused) return;
   audio.init();
 
   const rect = canvas.getBoundingClientRect();
-  const clickX = (e.clientX - rect.left) * (logicalWidth / rect.width);
-  const clickY = (e.clientY - rect.top) * (logicalHeight / rect.height);
+  const screenClickX = (e.clientX - rect.left) * (logicalWidth / rect.width);
+  const screenClickY = (e.clientY - rect.top) * (logicalHeight / rect.height);
+
+  const originX = logicalWidth / 2;
+  const originY = logicalHeight / 2 + 30;
+
+  // Map 2D screen coordinate to 2.5D World ground coordinate
+  const worldPos = Isometric.screenToWorld(screenClickX, screenClickY, originX, originY, 0);
 
   audio.playShockwave();
   triggerScreenShake(7);
 
   shockwaves.push({
-    x: clickX,
-    y: clickY,
+    x: screenClickX,
+    y: screenClickY,
     radius: 6,
     maxRadius: CONFIG.STRIKE.RADIUS,
     alpha: 1
@@ -357,79 +355,30 @@ canvas.addEventListener('pointerdown', (e) => {
 
   const strikeDamage = Math.round(turret.damage * CONFIG.STRIKE.DAMAGE_FACTOR);
   waveManager.enemies.forEach((enemy) => {
-    const dist = Math.hypot(enemy.x - clickX, enemy.y - clickY);
+    const dist = Math.hypot(enemy.x - worldPos.x, enemy.y - worldPos.y);
     if (dist < CONFIG.STRIKE.RADIUS) {
       enemy.takeDamage(strikeDamage);
-      addFloatingText(enemy.x, enemy.y, `-${strikeDamage}`, '#00ffcc', true);
-      createExplosion(enemy.x, enemy.y, '#00f3ff', 8);
-      const angle = Math.atan2(enemy.y - clickY, enemy.x - clickX);
+      const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, 16, originX, originY);
+      addFloatingText(enemyScreen.x, enemyScreen.y, `-${strikeDamage}`, '#00ffcc', true);
+      createExplosion(enemyScreen.x, enemyScreen.y, '#00f3ff', 8);
+
+      const angle = Math.atan2(enemy.y - worldPos.y, enemy.x - worldPos.x);
       enemy.x += Math.cos(angle) * CONFIG.STRIKE.KNOCKBACK;
       enemy.y += Math.sin(angle) * CONFIG.STRIKE.KNOCKBACK;
     }
   });
 });
 
-function drawBackgroundGridAndVeins(ctx, width, height, dt, energyRate) {
-  veinPulseTime += dt * (1.2 + energyRate * 0.08);
-
-  ctx.save();
-  const gridSize = CONFIG.CANVAS.GRID_SIZE;
-  ctx.strokeStyle = 'rgba(26, 34, 62, 0.45)';
-  ctx.lineWidth = 1;
-
-  for (let x = 0; x < width; x += gridSize) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, height);
-    ctx.stroke();
-  }
-
-  for (let y = 0; y < height; y += gridSize) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(width, y);
-    ctx.stroke();
-  }
-
-  const centerX = width / 2;
-  const centerY = height / 2;
-  const veinCount = 8;
-
-  for (let i = 0; i < veinCount; i++) {
-    const baseAngle = (i * Math.PI * 2) / veinCount;
-    const veinLength = Math.max(width, height) * 0.7;
-    const startX = centerX + Math.cos(baseAngle) * veinLength;
-    const startY = centerY + Math.sin(baseAngle) * veinLength;
-
-    ctx.beginPath();
-    ctx.moveTo(startX, startY);
-    ctx.lineTo(centerX, centerY);
-    ctx.strokeStyle = 'rgba(0, 243, 255, 0.12)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    const pulseOffset = (veinPulseTime * 0.2 + (i / veinCount)) % 1;
-    const nodeX = startX + (centerX - startX) * pulseOffset;
-    const nodeY = startY + (centerY - startY) * pulseOffset;
-
-    ctx.beginPath();
-    ctx.arc(nodeX, nodeY, 3, 0, Math.PI * 2);
-    ctx.fillStyle = '#00f3ff';
-    ctx.shadowColor = '#00f3ff';
-    ctx.shadowBlur = 8;
-    ctx.fill();
-  }
-
-  ctx.restore();
-}
-
-// Tick & Render Pipeline
+// Physics & State Pipeline
 function update(dt, timestamp) {
   gameState.updateShake();
 
   if (!gameState.isGameOver && !gameState.isPaused) {
     economy.update(dt);
     core.update(dt);
+
+    const originX = logicalWidth / 2;
+    const originY = logicalHeight / 2 + 30;
 
     if (cryoField) cryoField.update(dt, waveManager.enemies);
     waveManager.update(dt, logicalWidth, logicalHeight, core);
@@ -448,8 +397,10 @@ function update(dt, timestamp) {
         if (dist < b.radius + enemy.radius) {
           enemy.takeDamage(b.damage);
           audio.playImpact();
-          addFloatingText(enemy.x, enemy.y, `-${b.damage}`, '#ff0077');
-          createExplosion(b.x, b.y, '#00f3ff', 6);
+
+          const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, 14, originX, originY);
+          addFloatingText(enemyScreen.x, enemyScreen.y, `-${b.damage}`, '#ff0077');
+          createExplosion(enemyScreen.x, enemyScreen.y, '#00f3ff', 6);
           hit = true;
           break;
         }
@@ -470,8 +421,12 @@ function update(dt, timestamp) {
         const isBrute = enemy.type === 'brute';
         audio.playExplosion(isBrute);
         triggerScreenShake(isBrute ? 12 : 7);
-        createExplosion(enemy.x, enemy.y, '#ff3344', 20, isBrute);
-        addFloatingText(core.x, core.y - 20, `-${enemy.damage} HP`, '#ff3344', true);
+
+        const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, 12, originX, originY);
+        const coreScreen = Isometric.worldToScreen(core.x, core.y, 25, originX, originY);
+
+        createExplosion(enemyScreen.x, enemyScreen.y, '#ff3344', 20, isBrute);
+        addFloatingText(coreScreen.x, coreScreen.y - 15, `-${enemy.damage} HP`, '#ff3344', true);
         waveManager.enemies.splice(i, 1);
 
         if (core.isDestroyed()) {
@@ -487,8 +442,10 @@ function update(dt, timestamp) {
         gameState.kills++;
         audio.playExplosion(isBrute);
         if (isBrute) triggerScreenShake(6);
-        addFloatingText(enemy.x, enemy.y - 12, `+${enemy.reward}E`, '#ffd000', isBrute);
-        createExplosion(enemy.x, enemy.y, enemy.accentColor, 16, isBrute);
+
+        const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, 14, originX, originY);
+        addFloatingText(enemyScreen.x, enemyScreen.y - 10, `+${enemy.reward}E`, '#ffd000', isBrute);
+        createExplosion(enemyScreen.x, enemyScreen.y, enemy.accentColor, 16, isBrute);
         waveManager.enemies.splice(i, 1);
       }
     }
@@ -497,87 +454,27 @@ function update(dt, timestamp) {
   }
 }
 
+// Render Pass Pipeline
 function render(dt, timestamp) {
   const frameStart = performance.now();
 
-  ctx.save();
-  ctx.scale(dpr, dpr);
-  ctx.translate(gameState.screenShake.offsetX, gameState.screenShake.offsetY);
-  ctx.clearRect(-20, -20, logicalWidth + 40, logicalHeight + 40);
-
-  drawBackgroundGridAndVeins(ctx, logicalWidth, logicalHeight, dt, economy.getEnergyRate());
-
-  if (cryoField) cryoField.draw(ctx);
-  turret.drawRange(ctx);
-  core.draw(ctx);
-  turret.draw(ctx);
-  if (teslaCoil) teslaCoil.draw(ctx);
-
-  // Shockwaves
-  for (let i = shockwaves.length - 1; i >= 0; i--) {
-    const sw = shockwaves[i];
-    sw.radius += (sw.maxRadius - sw.radius) * 0.22;
-    sw.alpha -= 0.055;
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(sw.x, sw.y, sw.radius, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(0, 243, 255, ${Math.max(0, sw.alpha)})`;
-    ctx.lineWidth = 3.5;
-    ctx.shadowColor = '#00f3ff';
-    ctx.shadowBlur = 10;
-    ctx.stroke();
-    ctx.restore();
-    if (sw.alpha <= 0) shockwaves.splice(i, 1);
-  }
-
-  waveManager.enemies.forEach((enemy) => enemy.draw(ctx));
-  bullets.forEach((bullet) => bullet.draw(ctx));
-
-  // Particles
-  for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-    p.x += p.vx;
-    p.y += p.vy;
-    p.alpha -= p.decay;
-
-    if (p.alpha <= 0) {
-      particles.splice(i, 1);
-      continue;
-    }
-
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, p.alpha);
-    ctx.fillStyle = p.color;
-    ctx.shadowColor = p.color;
-    ctx.shadowBlur = 6;
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-
-  // Floating text
-  for (let i = floatingTexts.length - 1; i >= 0; i--) {
-    const ft = floatingTexts[i];
-    ft.y += ft.vy * dt;
-    ft.alpha -= dt / ft.life;
-
-    if (ft.alpha <= 0) {
-      floatingTexts.splice(i, 1);
-      continue;
-    }
-
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, ft.alpha);
-    ctx.font = `bold ${ft.size}px Consolas, monospace`;
-    ctx.fillStyle = ft.color;
-    ctx.shadowColor = ft.color;
-    ctx.shadowBlur = 8;
-    ctx.fillText(ft.text, ft.x - 12, ft.y);
-    ctx.restore();
-  }
-
-  ctx.restore();
+  renderer.renderScene({
+    dpr,
+    logicalWidth,
+    logicalHeight,
+    dt,
+    energyRate: economy.getEnergyRate(),
+    shake: gameState.screenShake,
+    core,
+    turret,
+    teslaCoil,
+    cryoField,
+    waveManager,
+    bullets,
+    particles,
+    floatingTexts,
+    shockwaves
+  });
 
   const totalEntities = (waveManager ? waveManager.enemies.length : 0) + bullets.length + particles.length;
   profiler.update(timestamp, totalEntities, performance.now() - frameStart);
