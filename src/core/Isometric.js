@@ -20,7 +20,6 @@ export class Isometric {
   static worldToScreen(x, y, z = 0, originX = 0, originY = 0) {
     const screenX = (x - y) * Isometric.COS_A + originX;
     const screenY = (x + y) * Isometric.SIN_A - z + originY;
-    // Isometric depth sorting index based on diagonal distance + vertical elevation
     const depth = x + y + z * 0.05;
 
     return { x: screenX, y: screenY, depth };
@@ -29,8 +28,8 @@ export class Isometric {
   /**
    * Inverse projection: Convert 2D Screen click/pointer coordinates to World Cartesian coordinates
    * Solves for ground plane (z = 0)
-   * @param {number} screenX - Click screen X
-   * @param {number} screenY - Click screen Y
+   * @param {number} screenX - Click screen X (relative to canvas container in CSS pixels)
+   * @param {number} screenY - Click screen Y (relative to canvas container in CSS pixels)
    * @param {number} originX - Screen horizontal center anchor
    * @param {number} originY - Screen vertical center anchor
    * @param {number} z - Target elevation plane (defaults to ground 0)
