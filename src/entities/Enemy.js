@@ -2,8 +2,7 @@ import { Isometric } from '../core/Isometric.js';
 
 /**
  * 2.5D Voxel Mobs (Humanoid Zombie & Heavy Stone Golem Brute)
- * Features hierarchical limb articulation (Head, Torso, Arms, Legs)
- * with animated walking swing cycles.
+ * Features hierarchical limb articulation and zero-redundancy shadow derivation.
  */
 export class Enemy {
   constructor(x, y, type = 'crawler', waveMultiplier = 1) {
@@ -14,16 +13,14 @@ export class Enemy {
     this.facingAngle = 0;
 
     if (type === 'crawler') {
-      // Voxel Zombie (Humanoid)
       this.radius = 12;
-      this.height = 28; // Total height in world voxels
+      this.height = 28;
       this.baseSpeed = 46 * (1 + (waveMultiplier - 1) * 0.05);
       this.maxHp = Math.round(20 * waveMultiplier);
       this.damage = 10;
       this.reward = 8;
       this.accentColor = '#2d6a4f';
     } else {
-      // Stone/Iron Golem Brute (Heavy Beast)
       this.radius = 20;
       this.height = 36;
       this.baseSpeed = 28 * (1 + (waveMultiplier - 1) * 0.03);
@@ -38,7 +35,6 @@ export class Enemy {
     this.slowTimer = 0;
     this.isChilled = false;
 
-    // Articulation & Gait Animation
     this.stridePhase = Math.random() * Math.PI * 2;
     this.legSwing = 0;
     this.armSwing = 0;
@@ -70,64 +66,60 @@ export class Enemy {
       this.isChilled = false;
     }
 
-    // Advance walking stride animation (swing speed scales with walk speed)
-    const strideSpeed = (this.speed / 20) * 4;
+    const strideSpeed = (this.speed * 0.05) * 4;
     this.stridePhase += dt * strideSpeed;
     this.legSwing = Math.sin(this.stridePhase);
     this.armSwing = Math.cos(this.stridePhase);
 
-    // Track heading toward center Beacon
     this.facingAngle = Math.atan2(targetY - this.y, targetX - this.x);
     this.x += Math.cos(this.facingAngle) * this.speed * dt;
     this.y += Math.sin(this.facingAngle) * this.speed * dt;
   }
 
   draw(ctx, originX = 0, originY = 0) {
-    // 1. Voxel Footprint Ground Shadow on z = 0
-    const shadowPos = Isometric.worldToScreen(this.x, this.y, 0, originX, originY);
+    // Single projection per frame
+    const screenPos = Isometric.worldToScreen(this.x, this.y, this.z, originX, originY);
+
+    // 1. Direct Ground Shadow derived on z = 0 without duplicate projection
     const shadowW = this.radius * 1.5;
     const shadowH = shadowW * 0.5;
+    const shadowY = screenPos.y + this.z + 2;
 
     ctx.save();
     ctx.beginPath();
-    ctx.ellipse(shadowPos.x, shadowPos.y + 2, shadowW, shadowH, 0, 0, Math.PI * 2);
+    ctx.ellipse(screenPos.x, shadowY, shadowW, shadowH, 0, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
     ctx.fill();
     ctx.restore();
 
-    // 2. Hierarchical Voxel Limbs Assembly
+    // 2. Voxel Limbs Assembly
     if (this.type === 'crawler') {
       this.drawVoxelZombie(ctx, originX, originY);
     } else {
-      this.drawVoxelGolem(ctx, originX, originY);
+      this.drawVoxelGolem(ctx, originX, originY, screenPos);
     }
 
-    // 3. Minecraft Mini Health Bar
+    // 3. Mini Health Bar positioned directly relative to screenPos
     if (this.hp < this.maxHp) {
-      const headPos = Isometric.worldToScreen(this.x, this.y, this.height + 4, originX, originY);
       const barW = this.radius * 2.2;
       const barH = 3.5;
       const pct = Math.max(0, this.hp / this.maxHp);
+      const barY = screenPos.y - (this.height + 4 - this.z);
 
       ctx.save();
       ctx.fillStyle = '#0e0e11';
-      ctx.fillRect(headPos.x - barW / 2, headPos.y, barW, barH);
+      ctx.fillRect(screenPos.x - barW / 2, barY, barW, barH);
       ctx.strokeStyle = '#000';
       ctx.lineWidth = 1;
-      ctx.strokeRect(headPos.x - barW / 2, headPos.y, barW, barH);
+      ctx.strokeRect(screenPos.x - barW / 2, barY, barW, barH);
 
       ctx.fillStyle = this.isChilled ? '#32d6d6' : '#28e05c';
-      ctx.fillRect(headPos.x - barW / 2 + 0.5, headPos.y + 0.5, (barW - 1) * pct, barH - 1);
+      ctx.fillRect(screenPos.x - barW / 2 + 0.5, barY + 0.5, (barW - 1) * pct, barH - 1);
       ctx.restore();
     }
   }
 
-  /**
-   * Humanoid Miner Zombie Assembly
-   * Head (8x8), Torso (8x12), Arms (reaching out forward), Legs (walking stride)
-   */
   drawVoxelZombie(ctx, originX, originY) {
-    // Palette (Standard Zombie vs Chilled Frost Zombie)
     const skinColors = this.isChilled ? {
       top: '#52b788',
       left: '#2d6a4f',
@@ -161,7 +153,6 @@ export class Enemy {
 
     const swingDistance = this.legSwing * 4.5;
 
-    // --- LEGS (Elevation: z = 0 to 12) ---
     // Left Leg
     Isometric.drawCube(
       ctx,
@@ -183,7 +174,7 @@ export class Enemy {
       originX, originY
     );
 
-    // --- TORSO (Elevation: z = 12 to 22) ---
+    // Torso
     Isometric.drawCube(
       ctx,
       this.x,
@@ -194,11 +185,10 @@ export class Enemy {
       originX, originY
     );
 
-    // --- ARMS (Reaching forward in classic zombie posture) ---
+    // Arms
     const armForwardX = Math.cos(this.facingAngle) * 5;
     const armForwardY = Math.sin(this.facingAngle) * 5;
 
-    // Left Arm
     Isometric.drawCube(
       ctx,
       this.x - 6 + armForwardX,
@@ -209,7 +199,6 @@ export class Enemy {
       originX, originY
     );
 
-    // Right Arm
     Isometric.drawCube(
       ctx,
       this.x + 6 + armForwardX,
@@ -220,7 +209,7 @@ export class Enemy {
       originX, originY
     );
 
-    // --- HEAD (Elevation: z = 22 to 30) ---
+    // Head
     Isometric.drawCube(
       ctx,
       this.x,
@@ -232,11 +221,7 @@ export class Enemy {
     );
   }
 
-  /**
-   * Heavy Stone Golem Beast Assembly
-   * Broad 2-block wide stone torso, massive swinging fists, thick legs, and glowing red eyes
-   */
-  drawVoxelGolem(ctx, originX, originY) {
+  drawVoxelGolem(ctx, originX, originY, screenPos) {
     const stoneGolemColors = this.isChilled ? {
       top: '#8da9c4',
       left: '#6584a2',
@@ -265,8 +250,7 @@ export class Enemy {
 
     const swingDistance = this.legSwing * 3.5;
 
-    // --- LEGS (Thick 6x6 stone columns, z = 0 to 14) ---
-    // Left Leg
+    // Legs
     Isometric.drawCube(
       ctx,
       this.x - 5,
@@ -277,7 +261,6 @@ export class Enemy {
       originX, originY
     );
 
-    // Right Leg
     Isometric.drawCube(
       ctx,
       this.x + 5,
@@ -288,7 +271,7 @@ export class Enemy {
       originX, originY
     );
 
-    // --- BROAD TORSO (Heavy stone & iron chestplate, z = 14 to 28) ---
+    // Torso
     Isometric.drawCube(
       ctx,
       this.x,
@@ -310,7 +293,7 @@ export class Enemy {
       originX, originY
     );
 
-    // Moss shoulder patch
+    // Moss shoulder
     Isometric.drawCube(
       ctx,
       this.x - 7,
@@ -321,10 +304,8 @@ export class Enemy {
       originX, originY
     );
 
-    // --- HEAVY SWINGING ARMS & FISTS (z = 8 to 26) ---
+    // Arms
     const fistSwing = this.armSwing * 4.5;
-
-    // Left Arm
     Isometric.drawCube(
       ctx,
       this.x - 12,
@@ -335,7 +316,6 @@ export class Enemy {
       originX, originY
     );
 
-    // Right Arm
     Isometric.drawCube(
       ctx,
       this.x + 12,
@@ -346,7 +326,7 @@ export class Enemy {
       originX, originY
     );
 
-    // --- GOLEM HEAD (Elongated stone brow, z = 28 to 38) ---
+    // Head
     Isometric.drawCube(
       ctx,
       this.x,
@@ -357,15 +337,15 @@ export class Enemy {
       originX, originY
     );
 
-    // Red glowing eyes tracking target
-    const headScreen = Isometric.worldToScreen(this.x, this.y, 32, originX, originY);
+    // Eyes: derived directly from base screenPos
+    const headScreenY = screenPos.y - (32 - this.z);
     const eyeOffsetX = Math.cos(this.facingAngle) * 4;
     const eyeOffsetY = Math.sin(this.facingAngle) * 2;
 
     ctx.save();
     ctx.fillStyle = '#ff2222';
-    ctx.fillRect(headScreen.x - 3 + eyeOffsetX, headScreen.y + eyeOffsetY, 2.5, 2.5);
-    ctx.fillRect(headScreen.x + 1 + eyeOffsetX, headScreen.y + eyeOffsetY, 2.5, 2.5);
+    ctx.fillRect(screenPos.x - 3 + eyeOffsetX, headScreenY + eyeOffsetY, 2.5, 2.5);
+    ctx.fillRect(screenPos.x + 1 + eyeOffsetX, headScreenY + eyeOffsetY, 2.5, 2.5);
     ctx.restore();
   }
 }
