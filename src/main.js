@@ -5,21 +5,34 @@ import { CryoField } from './entities/CryoField.js';
 import { WaveManager } from './systems/Waves.js';
 import { Economy } from './systems/Economy.js';
 import { AudioManager } from './systems/Audio.js';
+import { CrazyGamesSDK } from './sdk/crazy.js';
 
-// Setup Canvas
+// Setup Canvas and SDK
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
 export const audio = new AudioManager();
+export const crazySdk = new CrazyGamesSDK();
+
+// High DPI Scaling & Responsive letterboxing
+let dpr = 1;
+let logicalWidth = 760;
+let logicalHeight = 656;
 
 function resizeCanvas() {
   const container = document.getElementById('canvas-container');
   if (!container) return;
-  canvas.width = container.clientWidth;
-  canvas.height = container.clientHeight;
 
-  const centerX = canvas.width / 2;
-  const centerY = canvas.height / 2;
+  dpr = window.devicePixelRatio || 1;
+  logicalWidth = container.clientWidth;
+  logicalHeight = container.clientHeight;
+
+  canvas.width = Math.floor(logicalWidth * dpr);
+  canvas.height = Math.floor(logicalHeight * dpr);
+
+  const centerX = logicalWidth / 2;
+  const centerY = logicalHeight / 2;
+
   if (core) {
     core.x = centerX;
     core.y = centerY;
@@ -39,6 +52,8 @@ function resizeCanvas() {
 }
 
 window.addEventListener('resize', resizeCanvas);
+document.addEventListener('fullscreenchange', resizeCanvas);
+document.addEventListener('webkitfullscreenchange', resizeCanvas);
 
 // UI references
 const ui = {
@@ -54,6 +69,14 @@ const ui = {
   statCryo: document.getElementById('stat-cryo'),
   audioToggleBtn: document.getElementById('audio-toggle-btn'),
   audioIcon: document.getElementById('audio-icon'),
+  fullscreenBtn: document.getElementById('fullscreen-btn'),
+  perfToggleBtn: document.getElementById('perf-toggle-btn'),
+
+  // Profiler UI
+  perfOverlay: document.getElementById('perf-overlay'),
+  perfFps: document.getElementById('perf-fps'),
+  perfEntities: document.getElementById('perf-entities'),
+  perfMs: document.getElementById('perf-ms'),
 
   // Upgrade buttons
   lvlDamage: document.getElementById('lvl-damage'),
@@ -79,6 +102,9 @@ const ui = {
   // Game over modal
   gameOverModal: document.getElementById('game-over-modal'),
   payoutShards: document.getElementById('payout-shards'),
+  doubleShardsAmount: document.getElementById('double-shards-amount'),
+  btnRewardedDouble: document.getElementById('btn-rewarded-double'),
+  btnRewardedRevive: document.getElementById('btn-rewarded-revive'),
   summaryWaves: document.getElementById('summary-waves'),
   summaryEnergy: document.getElementById('summary-energy'),
   summaryKills: document.getElementById('summary-kills'),
@@ -129,6 +155,16 @@ let isPaused = false;
 let animationFrameId = null;
 let lastTimestamp = performance.now();
 
+// Rewarded Ad run flags
+let currentRunShardsEarned = 0;
+let hasDoubledShards = false;
+let hasRevivedThisRun = false;
+
+// Profiling metrics
+let showProfiler = false;
+let frameCount = 0;
+let lastFpsUpdate = performance.now();
+
 // Screen Shake Engine
 let screenShake = {
   intensity: 0,
@@ -141,7 +177,6 @@ export function triggerScreenShake(strength = 8) {
   screenShake.intensity = Math.max(screenShake.intensity, strength);
 }
 
-// Extraction Vein System
 let veinPulseTime = 0;
 
 export function addFloatingText(x, y, text, color = '#00f3ff', isCritical = false) {
@@ -182,8 +217,8 @@ function initGame() {
   }
 
   resizeCanvas();
-  const centerX = canvas.width / 2;
-  const centerY = canvas.height / 2;
+  const centerX = logicalWidth / 2;
+  const centerY = logicalHeight / 2;
 
   const currentShards = economy.coreShards;
   const currentMeta = { ...economy.meta };
@@ -210,14 +245,21 @@ function initGame() {
   killsCount = 0;
   isGameOver = false;
   isPaused = false;
+  hasDoubledShards = false;
+  hasRevivedThisRun = false;
   screenShake.intensity = 0;
   lastTimestamp = performance.now();
 
   ui.gameOverModal.classList.add('hidden');
   ui.workshopModal.classList.add('hidden');
+  ui.btnRewardedDouble.disabled = false;
+  ui.btnRewardedRevive.disabled = false;
 
   updateUI();
   updateWorkshopUI();
+
+  // Notify SDK of gameplay session commencement
+  crazySdk.gameplayStart();
 
   animationFrameId = requestAnimationFrame(gameLoop);
 }
@@ -316,7 +358,7 @@ function updateWorkshopUI() {
   }
 }
 
-// In-Run Upgrade Handlers with sound
+// In-Run Upgrades
 ui.btnDamage.addEventListener('click', () => {
   if (economy.buyUpgrade('damage')) {
     audio.playUpgrade();
@@ -352,7 +394,7 @@ ui.btnYield.addEventListener('click', () => {
   }
 });
 
-// Meta-Upgrade Handlers with sound
+// Meta Upgrades
 ui.btnMetaBaseEnergy.addEventListener('click', () => {
   if (economy.buyMetaUpgrade('baseEnergy')) {
     audio.playUpgrade();
@@ -385,7 +427,7 @@ ui.btnMetaUnlockTesla.addEventListener('click', () => {
   if (economy.buyMetaUpgrade('unlockTesla')) {
     audio.playUpgrade();
     if (!teslaCoil) {
-      teslaCoil = new TeslaCoil(canvas.width / 2, canvas.height / 2);
+      teslaCoil = new TeslaCoil(logicalWidth / 2, logicalHeight / 2);
     }
     updateWorkshopUI();
     updateUI();
@@ -396,22 +438,38 @@ ui.btnMetaUnlockCryo.addEventListener('click', () => {
   if (economy.buyMetaUpgrade('unlockCryo')) {
     audio.playUpgrade();
     if (!cryoField) {
-      cryoField = new CryoField(canvas.width / 2, canvas.height / 2);
+      cryoField = new CryoField(logicalWidth / 2, logicalHeight / 2);
     }
     updateWorkshopUI();
     updateUI();
   }
 });
 
-// Audio Toggle Button
+// Sound Toggle
 ui.audioToggleBtn.addEventListener('click', () => {
   const isMuted = audio.toggleMute();
   ui.audioIcon.textContent = isMuted ? '🔇' : '🔊';
 });
 
+// Fullscreen Toggle
+ui.fullscreenBtn.addEventListener('click', () => {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else {
+    if (document.exitFullscreen) document.exitFullscreen();
+  }
+});
+
+// Profiler Toggle
+ui.perfToggleBtn.addEventListener('click', () => {
+  showProfiler = !showProfiler;
+  ui.perfOverlay.classList.toggle('hidden', !showProfiler);
+});
+
 // Navigation & Modals
 ui.btnOpenWorkshop.addEventListener('click', () => {
   isPaused = true;
+  crazySdk.gameplayStop();
   updateWorkshopUI();
   ui.workshopModal.classList.remove('hidden');
 });
@@ -429,6 +487,7 @@ ui.closeWorkshopBtn.addEventListener('click', () => {
   } else {
     isPaused = false;
     lastTimestamp = performance.now();
+    crazySdk.gameplayStart();
   }
 });
 
@@ -436,14 +495,62 @@ ui.restartBtn.addEventListener('click', () => {
   initGame();
 });
 
-// Orbital kinetic assistance
+// Rewarded Ad 1: Double Core Shards
+ui.btnRewardedDouble.addEventListener('click', () => {
+  if (hasDoubledShards) return;
+
+  crazySdk.requestRewardedAd({
+    adStarted: () => {
+      audio.init();
+    },
+    rewardGiven: () => {
+      hasDoubledShards = true;
+      economy.addShards(currentRunShardsEarned);
+      ui.summaryTotalShards.textContent = economy.coreShards;
+      ui.payoutShards.textContent = `+${currentRunShardsEarned * 2} (DOUBLED!)`;
+      ui.btnRewardedDouble.disabled = true;
+      ui.btnRewardedDouble.textContent = '✓ SHARDS DOUBLED';
+      audio.playUpgrade();
+    }
+  });
+});
+
+// Rewarded Ad 2: Emergency Reboot Revive
+ui.btnRewardedRevive.addEventListener('click', () => {
+  if (hasRevivedThisRun) return;
+
+  crazySdk.requestRewardedAd({
+    adStarted: () => {
+      audio.init();
+    },
+    rewardGiven: () => {
+      hasRevivedThisRun = true;
+      isGameOver = false;
+      core.heal(Math.round(core.maxHp * 0.5));
+
+      // Clear surrounding enemies with a shockwave
+      waveManager.enemies.forEach(e => {
+        e.takeDamage(999);
+      });
+      bullets = [];
+
+      ui.gameOverModal.classList.add('hidden');
+      audio.playShockwave();
+      triggerScreenShake(12);
+      crazySdk.gameplayStart();
+      lastTimestamp = performance.now();
+    }
+  });
+});
+
+// Orbital assistance via Pointer Events
 canvas.addEventListener('pointerdown', (e) => {
   if (isGameOver || isPaused) return;
   audio.init();
 
   const rect = canvas.getBoundingClientRect();
-  const clickX = e.clientX - rect.left;
-  const clickY = e.clientY - rect.top;
+  const clickX = (e.clientX - rect.left) * (logicalWidth / rect.width);
+  const clickY = (e.clientY - rect.top) * (logicalHeight / rect.height);
 
   audio.playShockwave();
   triggerScreenShake(7);
@@ -472,21 +579,39 @@ canvas.addEventListener('pointerdown', (e) => {
 
 function handleGameOver() {
   isGameOver = true;
+  crazySdk.gameplayStop();
+
   audio.playCoreBreach();
   triggerScreenShake(16);
 
-  const shardsEarned = economy.calculateShardPayout(
+  currentRunShardsEarned = economy.calculateShardPayout(
     waveManager.currentWave,
     killsCount,
     economy.totalEarned
   );
-  economy.addShards(shardsEarned);
+  economy.addShards(currentRunShardsEarned);
 
-  ui.payoutShards.textContent = `+${shardsEarned}`;
+  ui.payoutShards.textContent = `+${currentRunShardsEarned}`;
+  ui.doubleShardsAmount.textContent = `+${currentRunShardsEarned}`;
   ui.summaryWaves.textContent = waveManager.currentWave;
   ui.summaryEnergy.textContent = Math.floor(economy.totalEarned);
   ui.summaryKills.textContent = killsCount;
   ui.summaryTotalShards.textContent = economy.coreShards;
+
+  if (hasRevivedThisRun) {
+    ui.btnRewardedRevive.disabled = true;
+    ui.btnRewardedRevive.textContent = 'REVIVE ALREADY USED';
+  }
+
+  // Request midgame interstitial ad with audio suspend
+  crazySdk.requestMidgameAd({
+    adStarted: () => {
+      // Audio is paused automatically by SDK or mute
+    },
+    adFinished: () => {
+      ui.gameOverModal.classList.remove('hidden');
+    }
+  });
 
   ui.gameOverModal.classList.remove('hidden');
 }
@@ -496,8 +621,6 @@ function drawBackgroundGridAndVeins(ctx, width, height, dt, energyRate) {
   veinPulseTime += dt * (1.2 + energyRate * 0.08);
 
   ctx.save();
-
-  // Grid
   const gridSize = 45;
   ctx.strokeStyle = 'rgba(26, 34, 62, 0.45)';
   ctx.lineWidth = 1;
@@ -516,7 +639,6 @@ function drawBackgroundGridAndVeins(ctx, width, height, dt, energyRate) {
     ctx.stroke();
   }
 
-  // Glowing Extraction Veins moving into center core
   const centerX = width / 2;
   const centerY = height / 2;
   const veinCount = 8;
@@ -527,7 +649,6 @@ function drawBackgroundGridAndVeins(ctx, width, height, dt, energyRate) {
     const startX = centerX + Math.cos(baseAngle) * veinLength;
     const startY = centerY + Math.sin(baseAngle) * veinLength;
 
-    // Glowing main conduit line
     ctx.beginPath();
     ctx.moveTo(startX, startY);
     ctx.lineTo(centerX, centerY);
@@ -535,7 +656,6 @@ function drawBackgroundGridAndVeins(ctx, width, height, dt, energyRate) {
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Pulse node packet traveling inward to the drill
     const pulseOffset = (veinPulseTime * 0.2 + (i / veinCount)) % 1;
     const nodeX = startX + (centerX - startX) * pulseOffset;
     const nodeY = startY + (centerY - startY) * pulseOffset;
@@ -553,10 +673,24 @@ function drawBackgroundGridAndVeins(ctx, width, height, dt, energyRate) {
 
 // Main Game Loop
 function gameLoop(timestamp) {
+  const frameStart = performance.now();
   const dt = Math.min((timestamp - lastTimestamp) / 1000, 0.1);
   lastTimestamp = timestamp;
 
-  // Process Screen Shake
+  // Profiler FPS counter
+  frameCount++;
+  if (timestamp - lastFpsUpdate >= 500) {
+    if (showProfiler) {
+      const currentFps = Math.round((frameCount * 1000) / (timestamp - lastFpsUpdate));
+      const totalEntities = (waveManager ? waveManager.enemies.length : 0) + bullets.length + particles.length;
+      ui.perfFps.textContent = currentFps;
+      ui.perfEntities.textContent = totalEntities;
+    }
+    frameCount = 0;
+    lastFpsUpdate = timestamp;
+  }
+
+  // Screen Shake
   if (screenShake.intensity > 0.1) {
     screenShake.offsetX = (Math.random() - 0.5) * screenShake.intensity;
     screenShake.offsetY = (Math.random() - 0.5) * screenShake.intensity;
@@ -568,29 +702,21 @@ function gameLoop(timestamp) {
   }
 
   if (!isGameOver && !isPaused) {
-    // 1. Passive Energy
     economy.update(dt);
-
-    // 2. Core
     core.update(dt);
 
-    // 3. Cryo Field Aura
     if (cryoField) {
       cryoField.update(dt, waveManager.enemies);
     }
 
-    // 4. Wave progression
-    waveManager.update(dt, canvas.width, canvas.height, core);
-
-    // 5. Turret Auto-firing
+    waveManager.update(dt, logicalWidth, logicalHeight, core);
     turret.update(dt, waveManager.enemies, bullets);
 
-    // 6. Tesla Coil Arc Attacks
     if (teslaCoil) {
       teslaCoil.update(dt, waveManager.enemies);
     }
 
-    // 7. Bullets
+    // Bullets
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
       b.update(dt);
@@ -609,16 +735,16 @@ function gameLoop(timestamp) {
         }
       }
 
-      if (hit || b.isOffscreen(canvas.width, canvas.height)) {
+      if (hit || b.isOffscreen(logicalWidth, logicalHeight)) {
         bullets.splice(i, 1);
       }
     }
 
-    // 8. Enemy Collision & Deaths
+    // Enemy Collisions & Eliminations
     for (let i = waveManager.enemies.length - 1; i >= 0; i--) {
       const enemy = waveManager.enemies[i];
-
       const distToCore = Math.hypot(enemy.x - core.x, enemy.y - core.y);
+
       if (distToCore < core.radius + enemy.radius) {
         core.takeDamage(enemy.damage);
         const isBrute = enemy.type === 'brute';
@@ -650,25 +776,22 @@ function gameLoop(timestamp) {
     updateUI();
   }
 
-  // --- RENDERING WITH SCREEN SHAKE ---
+  // --- RENDERING WITH HIGH-DPI & CAMERA SHAKE ---
   ctx.save();
+  ctx.scale(dpr, dpr);
   ctx.translate(screenShake.offsetX, screenShake.offsetY);
-  ctx.clearRect(-20, -20, canvas.width + 40, canvas.height + 40);
+  ctx.clearRect(-20, -20, logicalWidth + 40, logicalHeight + 40);
 
-  // Background Grid and Extraction Veins
-  drawBackgroundGridAndVeins(ctx, canvas.width, canvas.height, dt, economy.getEnergyRate());
+  drawBackgroundGridAndVeins(ctx, logicalWidth, logicalHeight, dt, economy.getEnergyRate());
 
-  // Cryo Field Area & Pulse
   if (cryoField) {
     cryoField.draw(ctx);
   }
 
-  // Turret Range & Core
   turret.drawRange(ctx);
   core.draw(ctx);
   turret.draw(ctx);
 
-  // Tesla Arc Lighting & Station
   if (teslaCoil) {
     teslaCoil.draw(ctx);
   }
@@ -690,10 +813,7 @@ function gameLoop(timestamp) {
     if (sw.alpha <= 0) shockwaves.splice(i, 1);
   }
 
-  // Enemies
   waveManager.enemies.forEach((enemy) => enemy.draw(ctx));
-
-  // Bullets
   bullets.forEach((bullet) => bullet.draw(ctx));
 
   // Particles
@@ -741,6 +861,11 @@ function gameLoop(timestamp) {
   }
 
   ctx.restore();
+
+  if (showProfiler) {
+    const renderTime = (performance.now() - frameStart).toFixed(2);
+    ui.perfMs.textContent = renderTime;
+  }
 
   animationFrameId = requestAnimationFrame(gameLoop);
 }
