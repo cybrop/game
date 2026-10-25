@@ -51,6 +51,9 @@ export class Enemy {
         this.speed = this.baseSpeed;
         this.isChilled = false;
       }
+    } else {
+      this.speed = this.baseSpeed;
+      this.isChilled = false;
     }
 
     const angle = Math.atan2(targetY - this.y, targetX - this.x);
