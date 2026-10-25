@@ -1,4 +1,4 @@
-import { addFloatingText, createExplosion } from '../main.js';
+import { addFloatingText, createExplosion, audio, triggerScreenShake } from '../main.js';
 
 export class TeslaCoil {
   constructor(x, y) {
@@ -9,7 +9,7 @@ export class TeslaCoil {
     this.maxChains = 3;
     this.cooldown = 1.3; // seconds
     this.timer = 0;
-    this.activeArcs = []; // Store lines for drawing
+    this.activeArcs = [];
   }
 
   update(dt, enemies) {
@@ -31,7 +31,6 @@ export class TeslaCoil {
   }
 
   discharge(enemies) {
-    // Find initial target
     let currentTarget = null;
     let minDist = this.range;
 
@@ -45,6 +44,9 @@ export class TeslaCoil {
 
     if (!currentTarget) return false;
 
+    audio.playTeslaZap();
+    triggerScreenShake(4);
+
     const hitEnemies = [currentTarget];
     this.activeArcs.push({
       x1: this.x,
@@ -55,8 +57,8 @@ export class TeslaCoil {
     });
 
     currentTarget.takeDamage(this.damage);
-    addFloatingText(currentTarget.x, currentTarget.y, `-${this.damage}`, '#00ffea');
-    createExplosion(currentTarget.x, currentTarget.y, '#00ffea', 5);
+    addFloatingText(currentTarget.x, currentTarget.y, `-${this.damage}`, '#00ffea', true);
+    createExplosion(currentTarget.x, currentTarget.y, '#00ffea', 6);
 
     // Chain to nearby enemies
     let prev = currentTarget;
@@ -86,7 +88,7 @@ export class TeslaCoil {
         const chainDamage = Math.round(this.damage * 0.75);
         nextTarget.takeDamage(chainDamage);
         addFloatingText(nextTarget.x, nextTarget.y, `-${chainDamage}`, '#00ffea');
-        createExplosion(nextTarget.x, nextTarget.y, '#00ffea', 4);
+        createExplosion(nextTarget.x, nextTarget.y, '#00ffea', 5);
         prev = nextTarget;
       } else {
         break;
@@ -97,7 +99,6 @@ export class TeslaCoil {
   }
 
   draw(ctx) {
-    // Draw animated electrical lightning arcs
     for (const arc of this.activeArcs) {
       ctx.save();
       ctx.strokeStyle = `rgba(0, 255, 234, ${Math.max(0, arc.alpha)})`;
@@ -108,9 +109,8 @@ export class TeslaCoil {
       ctx.beginPath();
       ctx.moveTo(arc.x1, arc.y1);
 
-      // Jagged lightning segment
-      const midX = (arc.x1 + arc.x2) / 2 + (Math.random() - 0.5) * 20;
-      const midY = (arc.y1 + arc.y2) / 2 + (Math.random() - 0.5) * 20;
+      const midX = (arc.x1 + arc.x2) / 2 + (Math.random() - 0.5) * 22;
+      const midY = (arc.y1 + arc.y2) / 2 + (Math.random() - 0.5) * 22;
       ctx.lineTo(midX, midY);
       ctx.lineTo(arc.x2, arc.y2);
       ctx.stroke();
@@ -122,7 +122,7 @@ export class TeslaCoil {
     ctx.translate(this.x, this.y);
     ctx.beginPath();
     ctx.arc(0, 0, 16, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(0, 255, 234, 0.4)';
+    ctx.strokeStyle = 'rgba(0, 255, 234, 0.45)';
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.restore();
