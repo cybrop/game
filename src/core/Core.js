@@ -1,7 +1,10 @@
+import { Isometric } from './Isometric.js';
+
 export class Core {
-  constructor(x, y, maxHp = 100) {
-    this.x = x;
-    this.y = y;
+  constructor(x = 0, y = 0, maxHp = 100) {
+    this.x = x; // World Cartesian X
+    this.y = y; // World Cartesian Y
+    this.z = 0;
     this.radius = 34;
     this.maxHp = maxHp;
     this.currentHp = maxHp;
@@ -26,29 +29,51 @@ export class Core {
     this.pulse += dt * 2.5;
   }
 
-  draw(ctx) {
-    ctx.save();
-    ctx.translate(this.x, this.y);
+  draw(ctx, originX = 0, originY = 0) {
+    // Project world anchor to screen
+    const screenPos = Isometric.worldToScreen(this.x, this.y, 0, originX, originY);
 
-    // Extraction shockwave field ring
-    const pulseRadius = this.radius + 6 + Math.sin(this.pulse) * 3;
+    ctx.save();
+    ctx.translate(screenPos.x, screenPos.y);
+
+    // Extraction shockwave pulse ring on ground
+    const pulseRadius = this.radius + 8 + Math.sin(this.pulse) * 3;
     ctx.beginPath();
-    ctx.arc(0, 0, pulseRadius, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(0, 243, 255, 0.25)';
+    ctx.ellipse(0, 0, pulseRadius * Isometric.COS_A * 2, pulseRadius * Isometric.SIN_A * 2, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(0, 243, 255, 0.28)';
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Dark energy drill base
+    // 2.5D Extruded Hexagonal/Cylindrical Drill Base
+    const baseHeight = 22;
+    const rx = this.radius * Isometric.COS_A * 2;
+    const ry = this.radius * Isometric.SIN_A * 2;
+
+    // Cylinder column sides
     ctx.beginPath();
-    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
-    ctx.fillStyle = '#0f1429';
+    ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI);
+    ctx.lineTo(rx, -baseHeight);
+    ctx.ellipse(0, -baseHeight, rx, ry, 0, 0, Math.PI, true);
+    ctx.lineTo(-rx, 0);
+    ctx.fillStyle = '#0a0f24';
     ctx.fill();
-    ctx.strokeStyle = '#00f3ff';
-    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#00aacc';
+    ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Internal rotating drill reactor
+    // Cylinder top deck
+    ctx.beginPath();
+    ctx.ellipse(0, -baseHeight, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#10162e';
+    ctx.fill();
+    ctx.strokeStyle = '#00f3ff';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // Rotating drill vanes
     ctx.save();
+    ctx.translate(0, -baseHeight);
+    ctx.scale(1, 0.5); // Isometric top-face squash
     ctx.rotate(this.rotation);
     ctx.strokeStyle = '#00f3ff';
     ctx.lineWidth = 2;
@@ -56,44 +81,39 @@ export class Core {
       ctx.rotate((Math.PI * 2) / 3);
       ctx.beginPath();
       ctx.moveTo(0, 0);
-      ctx.lineTo(0, -this.radius + 6);
+      ctx.lineTo(0, -this.radius + 8);
       ctx.stroke();
     }
     ctx.restore();
 
-    // Reactor Core Glow
+    // Reactor Core Glow Orb elevated atop drill
     ctx.beginPath();
-    ctx.arc(0, 0, 10, 0, Math.PI * 2);
+    ctx.arc(0, -baseHeight - 8, 8, 0, Math.PI * 2);
     ctx.fillStyle = '#ff0077';
     ctx.shadowColor = '#ff0077';
-    ctx.shadowBlur = 15;
+    ctx.shadowBlur = 16;
     ctx.fill();
+
     ctx.restore();
 
-    // Health Arc Indicator
-    this.drawHealthBar(ctx);
+    // Isometric Health Arc Indicator
+    this.drawHealthBar(ctx, originX, originY);
   }
 
-  drawHealthBar(ctx) {
+  drawHealthBar(ctx, originX, originY) {
+    const screenPos = Isometric.worldToScreen(this.x, this.y, 35, originX, originY);
     const hpRatio = Math.max(0, this.currentHp / this.maxHp);
-    const startAngle = -Math.PI / 2;
-    const endAngle = startAngle + (Math.PI * 2 * hpRatio);
+    const barW = 54;
+    const barH = 5;
 
     ctx.save();
-    ctx.translate(this.x, this.y);
-    ctx.beginPath();
-    ctx.arc(0, 0, this.radius + 12, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.lineWidth = 4;
-    ctx.stroke();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(screenPos.x - barW / 2, screenPos.y, barW, barH);
 
-    ctx.beginPath();
-    ctx.arc(0, 0, this.radius + 12, startAngle, endAngle);
-    ctx.strokeStyle = hpRatio > 0.4 ? '#00ff88' : '#ff3344';
-    ctx.shadowColor = ctx.strokeStyle;
-    ctx.shadowBlur = 8;
-    ctx.lineWidth = 4;
-    ctx.stroke();
+    ctx.fillStyle = hpRatio > 0.4 ? '#00ff88' : '#ff3344';
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.shadowBlur = 6;
+    ctx.fillRect(screenPos.x - barW / 2, screenPos.y, barW * hpRatio, barH);
     ctx.restore();
   }
 }
