@@ -57,6 +57,7 @@ body {
   justify-content: space-around;
   padding: 0 16px;
   z-index: 10;
+  position: relative;
 }
 
 .hud-box {
@@ -79,6 +80,22 @@ body {
 .hud-sub {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+.icon-hud-btn {
+  background: #12182e;
+  border: 1px solid var(--panel-border);
+  color: #fff;
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.icon-hud-btn:hover {
+  border-color: var(--cyan);
+  box-shadow: 0 0 8px var(--cyan-glow);
 }
 
 .neon-cyan {
@@ -117,8 +134,9 @@ body {
 #canvas-container {
   flex: 1;
   position: relative;
-  background: radial-gradient(circle at center, #10152d 0%, #060812 85%);
+  background: radial-gradient(circle at center, #0e142b 0%, #050711 90%);
   cursor: crosshair;
+  overflow: hidden;
 }
 
 #gameCanvas {
@@ -132,7 +150,8 @@ body {
   bottom: 12px;
   left: 16px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(0, 243, 255, 0.45);
+  letter-spacing: 1px;
   pointer-events: none;
 }
 
@@ -176,11 +195,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .upgrade-card:hover {
   border-color: var(--cyan);
+  box-shadow: inset 0 0 10px rgba(0, 243, 255, 0.08);
 }
 
 .upgrade-info {
@@ -274,8 +294,8 @@ body {
 .overlay {
   position: absolute;
   inset: 0;
-  background: rgba(4, 6, 12, 0.9);
-  backdrop-filter: blur(6px);
+  background: rgba(4, 6, 12, 0.92);
+  backdrop-filter: blur(8px);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -290,7 +310,7 @@ body {
 .modal-box {
   background: #10162c;
   border: 2px solid #ff3344;
-  box-shadow: 0 0 30px rgba(255, 51, 68, 0.4);
+  box-shadow: 0 0 35px rgba(255, 51, 68, 0.5);
   padding: 28px 36px;
   text-align: center;
   max-width: 480px;
@@ -299,6 +319,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  animation: modalPop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes modalPop {
+  0% { transform: scale(0.92); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 .modal-box h1 {
