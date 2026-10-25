@@ -1,10 +1,10 @@
 export class Core {
-  constructor(x, y) {
+  constructor(x, y, maxHp = 100) {
     this.x = x;
     this.y = y;
     this.radius = 34;
-    this.maxHp = 100;
-    this.currentHp = 100;
+    this.maxHp = maxHp;
+    this.currentHp = maxHp;
     this.rotation = 0;
     this.pulse = 0;
   }
