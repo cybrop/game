@@ -37,6 +37,7 @@ export class Renderer {
 
   invalidateTerrain() {
     this.cachedWidth = 0;
+    this.cachedHeight = 0;
   }
 
   renderScene({
@@ -56,8 +57,8 @@ export class Renderer {
     floatingTexts
   }) {
     const ctx = this.ctx;
-    const originX = logicalWidth / 2;
-    const originY = logicalHeight / 2 + 30;
+    const originX = logicalWidth * 0.5;
+    const originY = logicalHeight * 0.5 + 30;
 
     ctx.save();
     ctx.scale(dpr, dpr);
@@ -65,7 +66,7 @@ export class Renderer {
     ctx.clearRect(-40, -40, logicalWidth + 80, logicalHeight + 80);
 
     // ==========================================
-    // Pass 1: Blit Cached Voxel Terrain & Redstone Wire Conduits
+    // Pass 1: Blit Cached Voxel Terrain
     // ==========================================
     if (this.cachedWidth !== logicalWidth || this.cachedHeight !== logicalHeight || this.cachedDpr !== dpr) {
       this.updateTerrainCache(dpr, logicalWidth, logicalHeight, originX, originY);
