@@ -42,7 +42,6 @@ let waveManager;
 let bullets = [];
 let floatingTexts = [];
 
-// Performance buffer for floating text
 const MAX_FLOATING_TEXTS = 40;
 
 function resizeCanvas() {
@@ -100,7 +99,7 @@ export function triggerScreenShake(strength = 8) {
   gameState.triggerShake(strength);
 }
 
-export function addFloatingText(x, y, text, color = '#00f3ff', isCritical = false) {
+export function addFloatingText(x, y, text, color = '#ffffff', isCritical = false) {
   if (floatingTexts.length >= MAX_FLOATING_TEXTS) {
     floatingTexts.shift();
   }
@@ -117,13 +116,13 @@ export function addFloatingText(x, y, text, color = '#00f3ff', isCritical = fals
   });
 }
 
-export function createExplosion(worldX, worldY, worldZ = 12, color = '#ff0055', count = 16, isHeavy = false) {
+export function createExplosion(worldX, worldY, worldZ = 12, color = '#d61c1c', count = 16, isHeavy = false) {
   particleSystem.emitExplosion(worldX, worldY, worldZ, color, count, isHeavy);
 }
 
 function handleBuyInRunUpgrade(type) {
   if (economy.buyUpgrade(type)) {
-    audio.playUpgrade();
+    audio.playAnvil();
     if (type === 'damage') {
       const baseDamage = CONFIG.TURRET.BASE_DAMAGE + economy.meta.baseDamage * CONFIG.TURRET.DAMAGE_PER_META_LEVEL;
       turret.damage = Math.round(baseDamage * Math.pow(1.22, economy.upgrades.damage - 1));
@@ -144,7 +143,7 @@ function handleBuyInRunUpgrade(type) {
 
 function handleBuyMetaUpgrade(type) {
   if (economy.buyMetaUpgrade(type)) {
-    audio.playUpgrade();
+    audio.playAnvil();
     if (type === 'baseHp') {
       core.maxHp += CONFIG.CORE.HP_PER_META_LEVEL;
       core.heal(CONFIG.CORE.HP_PER_META_LEVEL);
@@ -199,7 +198,7 @@ function handleDoubleShards() {
         totalShards: economy.coreShards,
         hasRevived: gameState.hasRevivedThisRun
       });
-      audio.playUpgrade();
+      audio.playAnvil();
     }
   });
 }
@@ -219,8 +218,8 @@ function handleEmergencyRevive() {
       bullets = [];
 
       gameOverModal.hide();
-      audio.playShockwave();
-      particleSystem.emitShockwave(0, 0, 140, '#00f3ff');
+      audio.playTotemRevive();
+      particleSystem.emitShockwave(0, 0, 140, '#28e05c');
       triggerScreenShake(14);
       crazySdk.gameplayStart();
       loop.resetTime();
@@ -289,7 +288,7 @@ function initGame() {
 function handleGameOver() {
   gameState.isGameOver = true;
   crazySdk.gameplayStop();
-  audio.playCoreBreach();
+  audio.playBeaconDestroyed();
   triggerScreenShake(16);
 
   gameState.currentRunShardsEarned = economy.calculateShardPayout(
@@ -322,13 +321,12 @@ function handleGameOver() {
   });
 }
 
-// User Strike using Normalized Cross-Browser Isometric Inverse Raycast
+// User Strike: TNT Orbital Drop
 canvas.addEventListener('pointerdown', (e) => {
   if (gameState.isGameOver || gameState.isPaused) return;
   audio.init();
 
   const rect = canvas.getBoundingClientRect();
-  // Safe scale calculation accounting for CSS responsive downscaling or retina scaling
   const scaleX = logicalWidth / Math.max(1, rect.width);
   const scaleY = logicalHeight / Math.max(1, rect.height);
 
@@ -338,14 +336,12 @@ canvas.addEventListener('pointerdown', (e) => {
   const originX = logicalWidth / 2;
   const originY = logicalHeight / 2 + 30;
 
-  // Accurately unproject click from 2D screen into ground plane (z = 0)
   const worldPos = Isometric.screenToWorld(screenClickX, screenClickY, originX, originY, 0);
 
-  audio.playShockwave();
-  triggerScreenShake(7);
+  audio.playTNTExplosion(true);
+  triggerScreenShake(8);
 
-  // Emit 2.5D floor shockwave on the world plane
-  particleSystem.emitShockwave(worldPos.x, worldPos.y, CONFIG.STRIKE.RADIUS, '#00f3ff');
+  particleSystem.emitShockwave(worldPos.x, worldPos.y, CONFIG.STRIKE.RADIUS, '#d61c1c');
 
   const strikeDamage = Math.round(turret.damage * CONFIG.STRIKE.DAMAGE_FACTOR);
   for (let i = 0; i < waveManager.enemies.length; i++) {
@@ -353,9 +349,11 @@ canvas.addEventListener('pointerdown', (e) => {
     const dist = Math.hypot(enemy.x - worldPos.x, enemy.y - worldPos.y);
     if (dist < CONFIG.STRIKE.RADIUS) {
       enemy.takeDamage(strikeDamage);
+      audio.playMobDamage(enemy.type === 'brute');
+
       const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, enemy.height + 4, originX, originY);
-      addFloatingText(enemyScreen.x, enemyScreen.y, `-${strikeDamage}`, '#00ffcc', true);
-      particleSystem.emitSparks(enemy.x, enemy.y, enemy.height, '#00f3ff', 8);
+      addFloatingText(enemyScreen.x, enemyScreen.y, `-${strikeDamage}`, '#ff3838', true);
+      particleSystem.emitSparks(enemy.x, enemy.y, enemy.height, '#d61c1c', 8);
 
       const angle = Math.atan2(enemy.y - worldPos.y, enemy.x - worldPos.x);
       enemy.x += Math.cos(angle) * CONFIG.STRIKE.KNOCKBACK;
@@ -381,7 +379,7 @@ function update(dt, timestamp) {
     turret.update(dt, waveManager.enemies, bullets);
     if (teslaCoil) teslaCoil.update(dt, waveManager.enemies);
 
-    // Update 3D Projectiles
+    // Update 3D Arrow Projectiles
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
       b.update(dt);
@@ -394,17 +392,20 @@ function update(dt, timestamp) {
 
         if (dist2D < b.radius + enemy.radius && heightMatch) {
           enemy.takeDamage(b.damage);
-          audio.playImpact();
+          audio.playMobDamage(enemy.type === 'brute');
 
           const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, b.z, originX, originY);
-          addFloatingText(enemyScreen.x, enemyScreen.y, `-${b.damage}`, '#ff0077');
-          particleSystem.emitSparks(b.x, b.y, b.z, '#00f3ff', 6, b.angle + Math.PI);
+          addFloatingText(enemyScreen.x, enemyScreen.y, `-${b.damage}`, '#ff4444');
+          particleSystem.emitSparks(b.x, b.y, b.z, '#8f5c2c', 6, b.angle + Math.PI);
           hit = true;
           break;
         }
       }
 
       if (hit || b.isOffscreen()) {
+        if (!hit && b.z <= 0) {
+          audio.playImpact();
+        }
         bullets.splice(i, 1);
       }
     }
@@ -417,13 +418,13 @@ function update(dt, timestamp) {
       if (distToCore < core.radius + enemy.radius) {
         core.takeDamage(enemy.damage);
         const isBrute = enemy.type === 'brute';
-        audio.playExplosion(isBrute);
+        audio.playTNTExplosion(isBrute);
         triggerScreenShake(isBrute ? 12 : 7);
 
         const coreScreen = Isometric.worldToScreen(core.x, core.y, 35, originX, originY);
-        particleSystem.emitExplosion(enemy.x, enemy.y, enemy.height, '#ff3344', 20, isBrute);
-        particleSystem.emitShockwave(core.x, core.y, 40, '#ff3344');
-        addFloatingText(coreScreen.x, coreScreen.y - 15, `-${enemy.damage} HP`, '#ff3344', true);
+        particleSystem.emitExplosion(enemy.x, enemy.y, enemy.height, '#707070', 20, isBrute);
+        particleSystem.emitShockwave(core.x, core.y, 40, '#d61c1c');
+        addFloatingText(coreScreen.x, coreScreen.y - 15, `-${enemy.damage} HP`, '#ff3838', true);
         waveManager.enemies.splice(i, 1);
 
         if (core.isDestroyed()) {
@@ -437,11 +438,11 @@ function update(dt, timestamp) {
         const isBrute = enemy.type === 'brute';
         economy.addEnergy(enemy.reward);
         gameState.kills++;
-        audio.playExplosion(isBrute);
+        audio.playMobDamage(isBrute);
         if (isBrute) triggerScreenShake(6);
 
         const enemyScreen = Isometric.worldToScreen(enemy.x, enemy.y, enemy.height, originX, originY);
-        addFloatingText(enemyScreen.x, enemyScreen.y - 10, `+${enemy.reward}E`, '#ffd000', isBrute);
+        addFloatingText(enemyScreen.x, enemyScreen.y - 10, `+${enemy.reward} R`, '#d61c1c', isBrute);
         particleSystem.emitExplosion(enemy.x, enemy.y, enemy.height, enemy.accentColor, 16, isBrute);
         waveManager.enemies.splice(i, 1);
       }
