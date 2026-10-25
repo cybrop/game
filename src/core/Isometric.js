@@ -1,11 +1,11 @@
 /**
- * 2.5D Isometric Math & Voxel Cube Transformations
+ * 2.5D Isometric Math & Zero-Allocation Voxel Cube Transformations
  * Uses standard 2:1 dimetric projection (tile width = 2 * tile height)
  */
 export class Isometric {
   static ISO_ANGLE = Math.PI / 6; // 30 degrees
-  static COS_A = Math.cos(Isometric.ISO_ANGLE); // ~0.866025
-  static SIN_A = Math.sin(Isometric.ISO_ANGLE); // 0.5
+  static COS_A = Math.cos(Isometric.ISO_ANGLE); // ~0.8660254037844386
+  static SIN_A = 0.5; // Exactly 0.5
 
   /**
    * Convert 3D World Cartesian coordinates to 2D Screen coordinates
@@ -32,33 +32,38 @@ export class Isometric {
   }
 
   /**
-   * Draw an authentic 3-face directional isometric cube or prism
-   * @param {CanvasRenderingContext2D} ctx
-   * @param {number} x - Center X in world space
-   * @param {number} y - Center Y in world space
-   * @param {number} z - Base elevation in world space
-   * @param {number} sizeX - Width along X axis
-   * @param {number} sizeY - Length along Y axis
-   * @param {number} height - Vertical height (Z dimension)
-   * @param {Object} colors - { top, left, right, stroke }
-   * @param {number} originX
-   * @param {number} originY
+   * High-performance zero-allocation 3-face directional isometric cube
+   * Inlines trigonometric projection math to eliminate object allocation in tight loops.
    */
   static drawCube(ctx, x, y, z, sizeX, sizeY, height, colors, originX = 0, originY = 0) {
-    const hx = sizeX / 2;
-    const hy = sizeY / 2;
+    const cosA = Isometric.COS_A;
+    const sinA = Isometric.SIN_A;
+    const hx = sizeX * 0.5;
+    const hy = sizeY * 0.5;
 
-    // 4 bottom vertices (ground at elevation z)
-    const b0 = Isometric.worldToScreen(x - hx, y - hy, z, originX, originY); // back
-    const b1 = Isometric.worldToScreen(x + hx, y - hy, z, originX, originY); // right
-    const b2 = Isometric.worldToScreen(x + hx, y + hy, z, originX, originY); // front
-    const b3 = Isometric.worldToScreen(x - hx, y + hy, z, originX, originY); // left
+    const x0 = x - hx;
+    const x1 = x + hx;
+    const y0 = y - hy;
+    const y1 = y + hy;
 
-    // 4 top vertices (elevated by height)
-    const t0 = Isometric.worldToScreen(x - hx, y - hy, z + height, originX, originY);
-    const t1 = Isometric.worldToScreen(x + hx, y - hy, z + height, originX, originY);
-    const t2 = Isometric.worldToScreen(x + hx, y + hy, z + height, originX, originY);
-    const t3 = Isometric.worldToScreen(x - hx, y + hy, z + height, originX, originY);
+    // Bottom screen vertices (elevation z)
+    const b0x = (x0 - y0) * cosA + originX;
+    const b0y = (x0 + y0) * sinA - z + originY;
+
+    const b1x = (x1 - y0) * cosA + originX;
+    const b1y = (x1 + y0) * sinA - z + originY;
+
+    const b2x = (x1 - y1) * cosA + originX;
+    const b2y = (x1 + y1) * sinA - z + originY;
+
+    const b3x = (x0 - y1) * cosA + originX;
+    const b3y = (x0 + y1) * sinA - z + originY;
+
+    // Top screen vertices (elevated by height; X coordinates are identical)
+    const t0y = b0y - height;
+    const t1y = b1y - height;
+    const t2y = b2y - height;
+    const t3y = b3y - height;
 
     const strokeColor = colors.stroke || '#141416';
     ctx.save();
@@ -67,10 +72,10 @@ export class Isometric {
 
     // 1. LEFT FACE (b3, b2, t2, t3) - Medium diffuse shade
     ctx.beginPath();
-    ctx.moveTo(b3.x, b3.y);
-    ctx.lineTo(b2.x, b2.y);
-    ctx.lineTo(t2.x, t2.y);
-    ctx.lineTo(t3.x, t3.y);
+    ctx.moveTo(b3x, b3y);
+    ctx.lineTo(b2x, b2y);
+    ctx.lineTo(b2x, t2y);
+    ctx.lineTo(b3x, t3y);
     ctx.closePath();
     ctx.fillStyle = colors.left || '#44301a';
     ctx.fill();
@@ -79,22 +84,22 @@ export class Isometric {
 
     // 2. RIGHT FACE (b2, b1, t1, t2) - Deep shadow side
     ctx.beginPath();
-    ctx.moveTo(b2.x, b2.y);
-    ctx.lineTo(b1.x, b1.y);
-    ctx.lineTo(t1.x, t1.y);
-    ctx.lineTo(t2.x, t2.y);
+    ctx.moveTo(b2x, b2y);
+    ctx.lineTo(b1x, b1y);
+    ctx.lineTo(b1x, t1y);
+    ctx.lineTo(b2x, t2y);
     ctx.closePath();
     ctx.fillStyle = colors.right || '#312111';
     ctx.fill();
     ctx.strokeStyle = strokeColor;
     ctx.stroke();
 
-    // 3. TOP FACE (t0, t1, t2, t3) - Brightest direct illumination
+    // 3. TOP FACE (t0, t1, t2, t3) - Direct illumination
     ctx.beginPath();
-    ctx.moveTo(t0.x, t0.y);
-    ctx.lineTo(t1.x, t1.y);
-    ctx.lineTo(t2.x, t2.y);
-    ctx.lineTo(t3.x, t3.y);
+    ctx.moveTo(b0x, t0y);
+    ctx.lineTo(b1x, t1y);
+    ctx.lineTo(b2x, t2y);
+    ctx.lineTo(b3x, t3y);
     ctx.closePath();
     ctx.fillStyle = colors.top || '#588836';
     ctx.fill();
