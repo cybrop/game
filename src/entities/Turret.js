@@ -1,4 +1,5 @@
 import { Bullet } from './Bullet.js';
+import { audio } from '../main.js';
 
 export class Turret {
   constructor(x, y, baseDamage = 15) {
@@ -10,10 +11,14 @@ export class Turret {
     this.fireCooldown = 450; // ms
     this.timeSinceLastShot = 0; // ms
     this.target = null;
+    this.muzzleFlash = 0;
   }
 
   update(dt, enemies, bullets) {
     this.timeSinceLastShot += dt * 1000;
+    if (this.muzzleFlash > 0) {
+      this.muzzleFlash -= dt * 6;
+    }
 
     // Target nearest enemy within range
     this.target = this.findNearestEnemy(enemies);
@@ -25,6 +30,7 @@ export class Turret {
       if (this.timeSinceLastShot >= this.fireCooldown) {
         this.fire(bullets);
         this.timeSinceLastShot = 0;
+        this.muzzleFlash = 1;
       }
     }
   }
@@ -48,12 +54,23 @@ export class Turret {
     const spawnX = this.x + Math.cos(this.angle) * muzzleOffset;
     const spawnY = this.y + Math.sin(this.angle) * muzzleOffset;
     bullets.push(new Bullet(spawnX, spawnY, this.angle, this.damage));
+    audio.playLaser();
   }
 
   draw(ctx) {
     ctx.save();
     ctx.translate(this.x, this.y);
     ctx.rotate(this.angle);
+
+    // Muzzle flash when firing
+    if (this.muzzleFlash > 0) {
+      ctx.beginPath();
+      ctx.arc(26, 0, 10 * this.muzzleFlash, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(0, 243, 255, ${this.muzzleFlash})`;
+      ctx.shadowColor = '#00f3ff';
+      ctx.shadowBlur = 15;
+      ctx.fill();
+    }
 
     // Turret barrel
     ctx.fillStyle = '#00f3ff';
