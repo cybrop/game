@@ -1,7 +1,10 @@
 import { Core } from './core/Core.js';
 import { Turret } from './entities/Turret.js';
+import { TeslaCoil } from './entities/TeslaCoil.js';
+import { CryoField } from './entities/CryoField.js';
 import { WaveManager } from './systems/Waves.js';
 import { Economy } from './systems/Economy.js';
+import { StorageManager } from './systems/Storage.js';
 
 // Setup Canvas
 const canvas = document.getElementById('gameCanvas');
@@ -22,10 +25,13 @@ const ui = {
   wave: document.getElementById('wave-counter'),
   waveProgress: document.getElementById('wave-progress'),
   coreHpText: document.getElementById('core-hp-text'),
+  hudShards: document.getElementById('hud-shards'),
   kills: document.getElementById('stat-kills'),
   range: document.getElementById('stat-range'),
+  statTesla: document.getElementById('stat-tesla'),
+  statCryo: document.getElementById('stat-cryo'),
 
-  // Upgrade labels & buttons
+  // Upgrade buttons
   lvlDamage: document.getElementById('lvl-damage'),
   valDamage: document.getElementById('val-damage'),
   costDamage: document.getElementById('cost-damage'),
@@ -48,15 +54,45 @@ const ui = {
 
   // Game over modal
   gameOverModal: document.getElementById('game-over-modal'),
+  payoutShards: document.getElementById('payout-shards'),
   summaryWaves: document.getElementById('summary-waves'),
   summaryEnergy: document.getElementById('summary-energy'),
   summaryKills: document.getElementById('summary-kills'),
-  restartBtn: document.getElementById('restart-run-btn')
+  summaryTotalShards: document.getElementById('summary-total-shards'),
+  modalWorkshopBtn: document.getElementById('modal-workshop-btn'),
+  restartBtn: document.getElementById('restart-run-btn'),
+
+  // Workshop modal
+  btnOpenWorkshop: document.getElementById('btn-open-workshop'),
+  workshopModal: document.getElementById('workshop-modal'),
+  closeWorkshopBtn: document.getElementById('close-workshop-btn'),
+  workshopShardsVal: document.getElementById('workshop-shards-val'),
+
+  // Workshop buttons
+  metaLvlBaseEnergy: document.getElementById('meta-lvl-baseEnergy'),
+  metaCostBaseEnergy: document.getElementById('meta-cost-baseEnergy'),
+  btnMetaBaseEnergy: document.getElementById('btn-meta-baseEnergy'),
+
+  metaLvlBaseHp: document.getElementById('meta-lvl-baseHp'),
+  metaCostBaseHp: document.getElementById('meta-cost-baseHp'),
+  btnMetaBaseHp: document.getElementById('btn-meta-baseHp'),
+
+  metaLvlBaseDamage: document.getElementById('meta-lvl-baseDamage'),
+  metaCostBaseDamage: document.getElementById('meta-cost-baseDamage'),
+  btnMetaBaseDamage: document.getElementById('btn-meta-baseDamage'),
+
+  metaStatusTesla: document.getElementById('meta-status-tesla'),
+  btnMetaUnlockTesla: document.getElementById('btn-meta-unlockTesla'),
+
+  metaStatusCryo: document.getElementById('meta-status-cryo'),
+  btnMetaUnlockCryo: document.getElementById('btn-meta-unlockCryo')
 };
 
 // Game Entities & Systems
 let core;
 let turret;
+let teslaCoil = null;
+let cryoField = null;
 let economy;
 let waveManager;
 let bullets = [];
@@ -65,6 +101,7 @@ let floatingTexts = [];
 let shockwaves = [];
 let killsCount = 0;
 let isGameOver = false;
+let isPaused = false;
 let lastTimestamp = performance.now();
 
 export function addFloatingText(x, y, text, color = '#00f3ff') {
@@ -100,9 +137,19 @@ function initGame() {
   const centerX = canvas.width / 2;
   const centerY = canvas.height / 2;
 
-  core = new Core(centerX, centerY);
-  turret = new Turret(centerX, centerY);
   economy = new Economy();
+  const meta = economy.meta;
+
+  const baseHp = 100 + meta.baseHp * 40;
+  const baseDamage = 15 + meta.baseDamage * 5;
+
+  core = new Core(centerX, centerY, baseHp);
+  turret = new Turret(centerX, centerY, baseDamage);
+
+  // Initialize specialized weapons if unlocked in workshop
+  teslaCoil = meta.unlockTesla ? new TeslaCoil(centerX, centerY) : null;
+  cryoField = meta.unlockCryo ? new CryoField(centerX, centerY) : null;
+
   waveManager = new WaveManager();
 
   bullets = [];
@@ -113,17 +160,26 @@ function initGame() {
   isGameOver = false;
 
   ui.gameOverModal.classList.add('hidden');
+  ui.workshopModal.classList.add('hidden');
+
   updateUI();
+  updateWorkshopUI();
 }
 
 function updateUI() {
-  // Stats & Resources
   ui.energy.textContent = Math.floor(economy.energy);
   ui.energyRate.textContent = economy.getEnergyRate().toFixed(1);
   ui.wave.textContent = waveManager.currentWave;
   ui.coreHpText.textContent = `${Math.max(0, Math.ceil(core.currentHp))} / ${core.maxHp}`;
+  ui.hudShards.textContent = economy.coreShards;
   ui.kills.textContent = killsCount;
   ui.range.textContent = `${turret.range}px`;
+
+  ui.statTesla.textContent = economy.meta.unlockTesla ? 'Active' : 'Locked';
+  ui.statTesla.style.color = economy.meta.unlockTesla ? '#00ff88' : '#7482a5';
+
+  ui.statCryo.textContent = economy.meta.unlockCryo ? 'Active' : 'Locked';
+  ui.statCryo.style.color = economy.meta.unlockCryo ? '#00f3ff' : '#7482a5';
 
   // Wave status
   if (waveManager.isIntermission) {
@@ -132,28 +188,28 @@ function updateUI() {
     ui.waveProgress.textContent = `Enemies: ${waveManager.enemies.length + (waveManager.enemiesToSpawn - waveManager.enemiesSpawned)}`;
   }
 
-  // Damage
+  // Damage Upgrade
   const damageCost = economy.getUpgradeCost('damage');
   ui.lvlDamage.textContent = economy.upgrades.damage;
   ui.valDamage.textContent = turret.damage;
   ui.costDamage.textContent = damageCost;
   ui.btnDamage.disabled = economy.energy < damageCost;
 
-  // Fire Rate
+  // Fire Rate Upgrade
   const firerateCost = economy.getUpgradeCost('firerate');
   ui.lvlFirerate.textContent = economy.upgrades.firerate;
   ui.valFirerate.textContent = (turret.fireCooldown / 1000).toFixed(2);
   ui.costFirerate.textContent = firerateCost;
   ui.btnFirerate.disabled = economy.energy < firerateCost;
 
-  // Core Health
+  // Health Upgrade
   const healthCost = economy.getUpgradeCost('health');
   ui.lvlHealth.textContent = economy.upgrades.health;
   ui.valHealth.textContent = core.maxHp;
   ui.costHealth.textContent = healthCost;
   ui.btnHealth.disabled = economy.energy < healthCost;
 
-  // Extractor Yield
+  // Extractor Yield Upgrade
   const yieldCost = economy.getUpgradeCost('yield');
   ui.lvlYield.textContent = economy.upgrades.yield;
   ui.valYield.textContent = economy.getEnergyRate().toFixed(1);
@@ -161,10 +217,60 @@ function updateUI() {
   ui.btnYield.disabled = economy.energy < yieldCost;
 }
 
-// Upgrade Event Handlers
+function updateWorkshopUI() {
+  const meta = economy.meta;
+  ui.workshopShardsVal.textContent = economy.coreShards;
+
+  // Base Energy
+  const energyCost = economy.getMetaCost('baseEnergy');
+  ui.metaLvlBaseEnergy.textContent = meta.baseEnergy;
+  ui.metaCostBaseEnergy.textContent = energyCost;
+  ui.btnMetaBaseEnergy.disabled = economy.coreShards < energyCost;
+
+  // Base HP
+  const hpCost = economy.getMetaCost('baseHp');
+  ui.metaLvlBaseHp.textContent = meta.baseHp;
+  ui.metaCostBaseHp.textContent = hpCost;
+  ui.btnMetaBaseHp.disabled = economy.coreShards < hpCost;
+
+  // Base Damage
+  const damageCost = economy.getMetaCost('baseDamage');
+  ui.metaLvlBaseDamage.textContent = meta.baseDamage;
+  ui.metaCostBaseDamage.textContent = damageCost;
+  ui.btnMetaBaseDamage.disabled = economy.coreShards < damageCost;
+
+  // Tesla Unlock
+  if (meta.unlockTesla) {
+    ui.metaStatusTesla.textContent = 'INSTALLED';
+    ui.metaStatusTesla.style.color = '#00ff88';
+    ui.btnMetaUnlockTesla.disabled = true;
+    ui.btnMetaUnlockTesla.textContent = 'PURCHASED';
+  } else {
+    ui.metaStatusTesla.textContent = 'LOCKED';
+    ui.metaStatusTesla.style.color = '#ffd000';
+    ui.btnMetaUnlockTesla.disabled = economy.coreShards < 40;
+    ui.btnMetaUnlockTesla.textContent = 'UNLOCK (40 SHARDS)';
+  }
+
+  // Cryo Unlock
+  if (meta.unlockCryo) {
+    ui.metaStatusCryo.textContent = 'INSTALLED';
+    ui.metaStatusCryo.style.color = '#00ff88';
+    ui.btnMetaUnlockCryo.disabled = true;
+    ui.btnMetaUnlockCryo.textContent = 'PURCHASED';
+  } else {
+    ui.metaStatusCryo.textContent = 'LOCKED';
+    ui.metaStatusCryo.style.color = '#ffd000';
+    ui.btnMetaUnlockCryo.disabled = economy.coreShards < 50;
+    ui.btnMetaUnlockCryo.textContent = 'UNLOCK (50 SHARDS)';
+  }
+}
+
+// In-Run Upgrade Handlers
 ui.btnDamage.addEventListener('click', () => {
   if (economy.buyUpgrade('damage')) {
-    turret.damage = Math.round(15 * Math.pow(1.22, economy.upgrades.damage - 1));
+    const baseDamage = 15 + economy.meta.baseDamage * 5;
+    turret.damage = Math.round(baseDamage * Math.pow(1.22, economy.upgrades.damage - 1));
     updateUI();
   }
 });
@@ -179,7 +285,8 @@ ui.btnFirerate.addEventListener('click', () => {
 ui.btnHealth.addEventListener('click', () => {
   if (economy.buyUpgrade('health')) {
     const oldMax = core.maxHp;
-    core.maxHp = Math.round(100 * Math.pow(1.25, economy.upgrades.health - 1));
+    const baseHp = 100 + economy.meta.baseHp * 40;
+    core.maxHp = Math.round(baseHp * Math.pow(1.25, economy.upgrades.health - 1));
     core.heal(core.maxHp - oldMax);
     updateUI();
   }
@@ -191,13 +298,71 @@ ui.btnYield.addEventListener('click', () => {
   }
 });
 
+// Meta-Upgrade Handlers
+ui.btnMetaBaseEnergy.addEventListener('click', () => {
+  if (economy.buyMetaUpgrade('baseEnergy')) {
+    updateWorkshopUI();
+    updateUI();
+  }
+});
+
+ui.btnMetaBaseHp.addEventListener('click', () => {
+  if (economy.buyMetaUpgrade('baseHp')) {
+    updateWorkshopUI();
+    updateUI();
+  }
+});
+
+ui.btnMetaBaseDamage.addEventListener('click', () => {
+  if (economy.buyMetaUpgrade('baseDamage')) {
+    updateWorkshopUI();
+    updateUI();
+  }
+});
+
+ui.btnMetaUnlockTesla.addEventListener('click', () => {
+  if (economy.buyMetaUpgrade('unlockTesla')) {
+    updateWorkshopUI();
+    updateUI();
+  }
+});
+
+ui.btnMetaUnlockCryo.addEventListener('click', () => {
+  if (economy.buyMetaUpgrade('unlockCryo')) {
+    updateWorkshopUI();
+    updateUI();
+  }
+});
+
+// Navigation & Modals
+ui.btnOpenWorkshop.addEventListener('click', () => {
+  isPaused = true;
+  updateWorkshopUI();
+  ui.workshopModal.classList.remove('hidden');
+});
+
+ui.modalWorkshopBtn.addEventListener('click', () => {
+  ui.gameOverModal.classList.add('hidden');
+  updateWorkshopUI();
+  ui.workshopModal.classList.remove('hidden');
+});
+
+ui.closeWorkshopBtn.addEventListener('click', () => {
+  ui.workshopModal.classList.add('hidden');
+  if (isGameOver) {
+    ui.gameOverModal.classList.remove('hidden');
+  } else {
+    isPaused = false;
+  }
+});
+
 ui.restartBtn.addEventListener('click', () => {
   initGame();
 });
 
-// Click assistance: Orbital shockwave on user tap/click
+// Orbital kinetic assistance
 canvas.addEventListener('pointerdown', (e) => {
-  if (isGameOver) return;
+  if (isGameOver || isPaused) return;
   const rect = canvas.getBoundingClientRect();
   const clickX = e.clientX - rect.left;
   const clickY = e.clientY - rect.top;
@@ -210,26 +375,36 @@ canvas.addEventListener('pointerdown', (e) => {
     alpha: 1
   });
 
-  // Damage and knockback nearby enemies
+  const strikeDamage = Math.round(turret.damage * 0.85);
   waveManager.enemies.forEach((enemy) => {
     const dist = Math.hypot(enemy.x - clickX, enemy.y - clickY);
     if (dist < 65) {
-      const dmg = Math.round(turret.damage * 0.75);
-      enemy.takeDamage(dmg);
-      addFloatingText(enemy.x, enemy.y, `-${dmg}`, '#00ffcc');
-      // Knockback
+      enemy.takeDamage(strikeDamage);
+      addFloatingText(enemy.x, enemy.y, `-${strikeDamage}`, '#00ffcc');
       const angle = Math.atan2(enemy.y - clickY, enemy.x - clickX);
-      enemy.x += Math.cos(angle) * 20;
-      enemy.y += Math.sin(angle) * 20;
+      enemy.x += Math.cos(angle) * 22;
+      enemy.y += Math.sin(angle) * 22;
     }
   });
 });
 
 function handleGameOver() {
   isGameOver = true;
+
+  // Calculate Shard Payout based on waves, enemies killed, and dark biomass mined
+  const shardsEarned = economy.calculateShardPayout(
+    waveManager.currentWave,
+    killsCount,
+    economy.totalEarned
+  );
+  economy.addShards(shardsEarned);
+
+  ui.payoutShards.textContent = `+${shardsEarned}`;
   ui.summaryWaves.textContent = waveManager.currentWave;
   ui.summaryEnergy.textContent = Math.floor(economy.totalEarned);
   ui.summaryKills.textContent = killsCount;
+  ui.summaryTotalShards.textContent = economy.coreShards;
+
   ui.gameOverModal.classList.remove('hidden');
 }
 
@@ -238,25 +413,34 @@ function gameLoop(timestamp) {
   const dt = Math.min((timestamp - lastTimestamp) / 1000, 0.1);
   lastTimestamp = timestamp;
 
-  if (!isGameOver) {
-    // 1. Economy passive generation
+  if (!isGameOver && !isPaused) {
+    // 1. Passive Energy
     economy.update(dt);
 
-    // 2. Core update
+    // 2. Core
     core.update(dt);
 
-    // 3. Wave & Enemy updates
+    // 3. Cryo Field Aura
+    if (cryoField) {
+      cryoField.update(dt, waveManager.enemies);
+    }
+
+    // 4. Wave progression
     waveManager.update(dt, canvas.width, canvas.height, core);
 
-    // 4. Turret auto-targeting and firing
+    // 5. Turret Auto-firing
     turret.update(dt, waveManager.enemies, bullets);
 
-    // 5. Update Projectiles
+    // 6. Tesla Coil Arc Attacks
+    if (teslaCoil) {
+      teslaCoil.update(dt, waveManager.enemies);
+    }
+
+    // 7. Bullets
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
       b.update(dt);
 
-      // Check collision against all active enemies
       let hit = false;
       for (let j = 0; j < waveManager.enemies.length; j++) {
         const enemy = waveManager.enemies[j];
@@ -275,11 +459,10 @@ function gameLoop(timestamp) {
       }
     }
 
-    // 6. Handle dead enemies & core collision
+    // 8. Enemy Collision & Deaths
     for (let i = waveManager.enemies.length - 1; i >= 0; i--) {
       const enemy = waveManager.enemies[i];
 
-      // Reached core
       const distToCore = Math.hypot(enemy.x - core.x, enemy.y - core.y);
       if (distToCore < core.radius + enemy.radius) {
         core.takeDamage(enemy.damage);
@@ -294,7 +477,6 @@ function gameLoop(timestamp) {
         continue;
       }
 
-      // Slain by turret/strike
       if (enemy.isDead()) {
         economy.addEnergy(enemy.reward);
         killsCount++;
@@ -309,18 +491,22 @@ function gameLoop(timestamp) {
 
   // --- RENDERING ---
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // Background Grid
   drawGrid(ctx, canvas.width, canvas.height);
 
-  // Core range ring
+  // Cryo Field Area & Pulse
+  if (cryoField) {
+    cryoField.draw(ctx);
+  }
+
+  // Turret Range & Core
   turret.drawRange(ctx);
-
-  // Core
   core.draw(ctx);
-
-  // Turret
   turret.draw(ctx);
+
+  // Tesla Arc Lighting & Station
+  if (teslaCoil) {
+    teslaCoil.draw(ctx);
+  }
 
   // Shockwaves
   for (let i = shockwaves.length - 1; i >= 0; i--) {
@@ -364,7 +550,7 @@ function gameLoop(timestamp) {
     ctx.restore();
   }
 
-  // Floating text indicators
+  // Floating text
   for (let i = floatingTexts.length - 1; i >= 0; i--) {
     const ft = floatingTexts[i];
     ft.y -= 25 * dt;
@@ -408,6 +594,6 @@ function drawGrid(ctx, width, height) {
   ctx.restore();
 }
 
-// Launch
+// Start
 initGame();
 requestAnimationFrame(gameLoop);
