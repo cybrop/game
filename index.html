@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Core Extractor - Cyber Idle Defense</title>
   <link rel="stylesheet" href="style.css">
+  <!-- CrazyGames SDK v2 / v3 -->
+  <script src="https://sdk.crazygames.com/crazygames-sdk-v2.js"></script>
 </head>
 <body>
   <div id="game-wrapper">
@@ -28,9 +30,13 @@
         <span class="hud-label">CORE INTEGRITY:</span>
         <span id="core-hp-text" class="hud-val neon-green">100 / 100</span>
       </div>
-      <button id="audio-toggle-btn" class="icon-hud-btn" title="Toggle Sound">
-        <span id="audio-icon">🔊</span>
-      </button>
+      <div class="hud-controls">
+        <button id="perf-toggle-btn" class="icon-hud-btn" title="Toggle Profiler (FPS)">⚡</button>
+        <button id="fullscreen-btn" class="icon-hud-btn" title="Toggle Fullscreen">⛶</button>
+        <button id="audio-toggle-btn" class="icon-hud-btn" title="Toggle Sound">
+          <span id="audio-icon">🔊</span>
+        </button>
+      </div>
     </header>
 
     <div id="main-stage">
@@ -38,6 +44,11 @@
       <div id="canvas-container">
         <canvas id="gameCanvas"></canvas>
         <div id="click-hint">Tip: Click anywhere to call an orbital strike</div>
+        <div id="perf-overlay" class="perf-stats hidden">
+          <div>FPS: <span id="perf-fps">60</span></div>
+          <div>ENTITIES: <span id="perf-entities">0</span></div>
+          <div>FRAME TIME: <span id="perf-ms">0</span>ms</div>
+        </div>
       </div>
 
       <!-- In-Run Upgrade Sidebar -->
@@ -128,6 +139,16 @@
           <span class="payout-label">CORE SHARDS EXTRACTED:</span>
           <span id="payout-shards" class="payout-val neon-yellow">+0</span>
         </div>
+
+        <div class="reward-ad-row">
+          <button id="btn-rewarded-double" class="reward-ad-btn">
+            🎬 WATCH AD: 2X SHARDS (<span id="double-shards-amount">+0</span>)
+          </button>
+          <button id="btn-rewarded-revive" class="reward-ad-btn cyan-reward">
+            ⚡ WATCH AD: EMERGENCY REBOOT (50% HP)
+          </button>
+        </div>
+
         <div class="stats-summary">
           <div>Waves Cleared: <strong id="summary-waves">0</strong></div>
           <div>Biomass Harvested: <strong id="summary-energy">0</strong></div>
