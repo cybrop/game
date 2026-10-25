@@ -54,6 +54,8 @@ function resizeCanvas() {
 
   canvas.width = Math.floor(logicalWidth * dpr);
   canvas.height = Math.floor(logicalHeight * dpr);
+
+  renderer.invalidateTerrain();
 }
 
 window.addEventListener('resize', resizeCanvas);
@@ -211,11 +213,12 @@ function handleEmergencyRevive() {
       gameState.hasRevivedThisRun = true;
       gameState.isGameOver = false;
       core.heal(Math.round(core.maxHp * 0.5));
-      waveManager.enemies.forEach(e => {
+      for (let i = 0; i < waveManager.enemies.length; i++) {
+        const e = waveManager.enemies[i];
         particleSystem.emitExplosion(e.x, e.y, e.height, e.accentColor, 14, false);
         e.takeDamage(999);
-      });
-      bullets = [];
+      }
+      bullets.length = 0;
 
       gameOverModal.hide();
       audio.playTotemRevive();
@@ -321,7 +324,7 @@ function handleGameOver() {
   });
 }
 
-// User Strike: TNT Orbital Drop
+// User Strike: TNT Orbital Drop with fast squared distance test
 canvas.addEventListener('pointerdown', (e) => {
   if (gameState.isGameOver || gameState.isPaused) return;
   audio.init();
@@ -344,10 +347,14 @@ canvas.addEventListener('pointerdown', (e) => {
   particleSystem.emitShockwave(worldPos.x, worldPos.y, CONFIG.STRIKE.RADIUS, '#d61c1c');
 
   const strikeDamage = Math.round(turret.damage * CONFIG.STRIKE.DAMAGE_FACTOR);
+  const strikeRadiusSq = CONFIG.STRIKE.RADIUS * CONFIG.STRIKE.RADIUS;
+
   for (let i = 0; i < waveManager.enemies.length; i++) {
     const enemy = waveManager.enemies[i];
-    const dist = Math.hypot(enemy.x - worldPos.x, enemy.y - worldPos.y);
-    if (dist < CONFIG.STRIKE.RADIUS) {
+    const dx = enemy.x - worldPos.x;
+    const dy = enemy.y - worldPos.y;
+
+    if (dx * dx + dy * dy < strikeRadiusSq) {
       enemy.takeDamage(strikeDamage);
       audio.playMobDamage(enemy.type === 'brute');
 
@@ -355,7 +362,7 @@ canvas.addEventListener('pointerdown', (e) => {
       addFloatingText(enemyScreen.x, enemyScreen.y, `-${strikeDamage}`, '#ff3838', true);
       particleSystem.emitSparks(enemy.x, enemy.y, enemy.height, '#d61c1c', 8);
 
-      const angle = Math.atan2(enemy.y - worldPos.y, enemy.x - worldPos.x);
+      const angle = Math.atan2(dy, dx);
       enemy.x += Math.cos(angle) * CONFIG.STRIKE.KNOCKBACK;
       enemy.y += Math.sin(angle) * CONFIG.STRIKE.KNOCKBACK;
     }
@@ -379,18 +386,20 @@ function update(dt, timestamp) {
     turret.update(dt, waveManager.enemies, bullets);
     if (teslaCoil) teslaCoil.update(dt, waveManager.enemies);
 
-    // Update 3D Arrow Projectiles
+    // Fast squared-distance 3D projectile collision checks
+    const eLen = waveManager.enemies.length;
     for (let i = bullets.length - 1; i >= 0; i--) {
       const b = bullets[i];
       b.update(dt);
 
       let hit = false;
-      for (let j = 0; j < waveManager.enemies.length; j++) {
+      for (let j = 0; j < eLen; j++) {
         const enemy = waveManager.enemies[j];
-        const dist2D = Math.hypot(b.x - enemy.x, b.y - enemy.y);
-        const heightMatch = b.z <= enemy.height + 8 && b.z >= 0;
+        const dx = b.x - enemy.x;
+        const dy = b.y - enemy.y;
+        const rSum = b.radius + enemy.radius;
 
-        if (dist2D < b.radius + enemy.radius && heightMatch) {
+        if (dx * dx + dy * dy < rSum * rSum && b.z <= enemy.height + 8 && b.z >= 0) {
           enemy.takeDamage(b.damage);
           audio.playMobDamage(enemy.type === 'brute');
 
@@ -410,12 +419,14 @@ function update(dt, timestamp) {
       }
     }
 
-    // Enemies
+    // Fast squared-distance Core collisions & enemy death processing
+    const coreR = core.radius;
     for (let i = waveManager.enemies.length - 1; i >= 0; i--) {
       const enemy = waveManager.enemies[i];
-      const distToCore = Math.hypot(enemy.x - core.x, enemy.y - core.y);
+      const rSum = coreR + enemy.radius;
+      const distSq = enemy.x * enemy.x + enemy.y * enemy.y;
 
-      if (distToCore < core.radius + enemy.radius) {
+      if (distSq < rSum * rSum) {
         core.takeDamage(enemy.damage);
         const isBrute = enemy.type === 'brute';
         audio.playTNTExplosion(isBrute);
