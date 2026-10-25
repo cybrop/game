@@ -13,11 +13,19 @@
     <!-- Top HUD Bar Mount -->
     <header id="top-hud"></header>
 
+    <!-- Boss Health Bar Overlay -->
+    <div id="boss-hud-bar" class="boss-bar-container hidden">
+      <div class="boss-title" id="boss-name">WITHER BEAST</div>
+      <div class="boss-health-frame">
+        <div class="boss-health-fill" id="boss-hp-fill"></div>
+      </div>
+    </div>
+
     <div id="main-stage">
       <!-- Main Arena Canvas Mount -->
       <div id="canvas-container">
         <canvas id="gameCanvas"></canvas>
-        <div id="click-hint">Tip: Click anywhere to summon a TNT orbital strike</div>
+        <div id="click-hint">Tip: Click anywhere to drop a TNT block</div>
         <div id="perf-overlay" class="perf-stats hidden"></div>
       </div>
 
@@ -28,6 +36,15 @@
     <!-- Modals Mount -->
     <div id="game-over-modal" class="overlay hidden"></div>
     <div id="workshop-modal" class="overlay hidden"></div>
+
+    <!-- Mobile Orientation Warning Overlay -->
+    <div id="orientation-warning" class="orientation-screen">
+      <div class="orientation-box">
+        <span class="rotate-icon">📱 ➔ 🔄</span>
+        <h2>ROTATE YOUR DEVICE</h2>
+        <p>Please rotate your phone to landscape mode for the best block defense experience!</p>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="src/main.js"></script>
