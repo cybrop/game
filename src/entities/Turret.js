@@ -1,12 +1,12 @@
 import { Bullet } from './Bullet.js';
 
 export class Turret {
-  constructor(x, y) {
+  constructor(x, y, baseDamage = 15) {
     this.x = x;
     this.y = y;
     this.angle = 0;
     this.range = 240;
-    this.damage = 15;
+    this.damage = baseDamage;
     this.fireCooldown = 450; // ms
     this.timeSinceLastShot = 0; // ms
     this.target = null;
